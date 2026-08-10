@@ -139,7 +139,7 @@ def build_training_arguments(
         except Exception as exc:
             print(f"bitsandbytes unavailable ({exc}); using adamw_torch")
 
-    return TrainingArguments(
+    arguments = TrainingArguments(
         output_dir=str(output_dir),
         num_train_epochs=config.epochs,
         max_steps=max_steps,
@@ -165,6 +165,29 @@ def build_training_arguments(
         seed=DataConfig().seed,
         remove_unused_columns=False,
     )
+
+    # QLoRA and DataParallel are incompatible, and the failure is ugly.
+    #
+    # `Trainer` wraps the model in `nn.DataParallel` whenever it sees more than one GPU
+    # -- which a Kaggle "T4 x2" session always does. DataParallel *replicates* the model
+    # onto each device every step, and a bitsandbytes 4-bit layer does not survive
+    # replication: its quantization state does not come along, so the replica's weights
+    # are garbage pointers. The result is `CUDA error: an illegal memory access` raised
+    # from inside `gemm_4bit`, several frames deep in bnb, saying nothing about the
+    # actual cause.
+    #
+    # Pinning to one GPU is the fix, not a workaround: this run is sized for a single
+    # <=8 GB device by design, so the second GPU was never going to be used. Real
+    # multi-GPU QLoRA needs DDP (one process per GPU), which is out of scope here.
+    if use_cuda and torch.cuda.device_count() > 1:
+        _ = arguments.device  # force device setup; this is what populates _n_gpu
+        arguments._n_gpu = 1
+        print(
+            f"{torch.cuda.device_count()} GPUs visible; pinning to 1 "
+            "(DataParallel corrupts 4-bit quantized weights)"
+        )
+
+    return arguments
 
 
 def train_lora(
