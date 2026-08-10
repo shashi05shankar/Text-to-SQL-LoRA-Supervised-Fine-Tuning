@@ -1,0 +1,41 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    image: text2sql-lora-api
+    ports:
+      - "8000:8000"
+    volumes:
+      # Trained weights live OUTSIDE the image -- the adapter is an artifact of a run,
+      # not part of the code. Read-only: the service never writes to them.
+      - ./artifacts:/artifacts:ro
+      # Spider's SQLite databases, needed to execute generated SQL.
+      - ./data:/data:ro
+      # Persist the Hub cache so the ~3 GB base model is downloaded once, not on every
+      # container start.
+      - hf-cache:/hf-cache
+    environment:
+      T2S_ARTIFACTS_DIR: /artifacts
+      T2S_DATA_DIR: /data
+
+  ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ui
+    image: text2sql-lora-ui
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./artifacts:/artifacts:ro
+      - ./data:/data:ro
+    environment:
+      T2S_ARTIFACTS_DIR: /artifacts
+      T2S_DATA_DIR: /data
+      T2S_API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  hf-cache:

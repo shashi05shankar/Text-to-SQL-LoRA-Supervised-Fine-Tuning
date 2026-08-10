@@ -1,0 +1,22 @@
+# Build context hygiene: without this, the 210 MB Spider download and the venv get sent
+# to the daemon on every build.
+.venv/
+venv/
+data/
+notebooks/
+tests/
+docs/
+.git/
+.github/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.env
+.env.*
+
+# Artifacts are mounted as a volume at runtime, not baked into the image.
+artifacts/

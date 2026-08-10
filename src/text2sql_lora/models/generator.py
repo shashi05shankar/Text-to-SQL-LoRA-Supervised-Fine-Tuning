@@ -38,9 +38,32 @@ def resolve_dtype(device: str):
     import torch
 
     if device != "cuda" or not torch.cuda.is_available():
-        return torch.float32  # CPU fp16 is slower than fp32, not faster
+        return torch.float32
     major, _ = torch.cuda.get_device_capability(0)
     return torch.bfloat16 if major >= 8 else torch.float16
+
+
+def resolve_serving_dtype():
+    """Dtype for CPU inference, where MEMORY is the binding constraint, not arithmetic.
+
+    Measured on an 8 GB laptop: at float32 the 1.5B base model needs ~6.2 GB of weights,
+    the machine pages to disk, and a single query took **369 seconds**. bfloat16 halves
+    that to ~3.1 GB, which fits in RAM.
+
+    So the usual advice -- "CPU fp16/bf16 is slower than fp32" -- is about arithmetic
+    throughput and only holds when the weights fit. When they do not, halving the memory
+    traffic dominates everything else.
+
+    Override with `T2S_SERVING_DTYPE=float32` on a machine with RAM to spare.
+    """
+    import os
+
+    import torch
+
+    requested = os.environ.get("T2S_SERVING_DTYPE", "bfloat16").lower()
+    return {"float32": torch.float32, "float16": torch.float16}.get(
+        requested, torch.bfloat16
+    )
 
 
 def dtype_kwarg(compute_dtype) -> dict:
@@ -95,12 +118,13 @@ def load_base_model(
     model_name: str,
     device: str = "cuda",
     quantize: bool = True,
+    dtype=None,
 ):
-    """Load the frozen base model."""
+    """Load the frozen base model. `dtype=None` picks one from the hardware."""
     import torch
     from transformers import AutoModelForCausalLM
 
-    compute_dtype = resolve_dtype(device)
+    compute_dtype = dtype if dtype is not None else resolve_dtype(device)
     kwargs: dict = {**dtype_kwarg(compute_dtype), "attn_implementation": "sdpa"}
 
     if quantize and device == "cuda" and torch.cuda.is_available():
@@ -191,10 +215,13 @@ class SqlGenerator:
         device: str = "cpu",
         quantize: bool = False,
         settings: GenerationSettings | None = None,
+        dtype=None,
     ) -> SqlGenerator:
         model_name = model_name or DataConfig().base_model
         tokenizer = load_tokenizer(model_name)
-        model = load_base_model(model_name, device=device, quantize=quantize)
+        if dtype is None and device != "cuda":
+            dtype = resolve_serving_dtype()
+        model = load_base_model(model_name, device=device, quantize=quantize, dtype=dtype)
 
         has_adapter = False
         if adapter_dir is not None:

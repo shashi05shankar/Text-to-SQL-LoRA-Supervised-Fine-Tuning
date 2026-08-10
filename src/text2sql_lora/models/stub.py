@@ -11,23 +11,49 @@ exactly what a harness test needs -- the harness's job is to score whatever it i
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Sequence
 
 
 class StubGenerator:
     """Returns canned completions, cycling through `responses`.
 
+    Mirrors `SqlGenerator`'s full interface -- including `base_only()` and `has_adapter` --
+    because the serving layer depends on both. A stub that implemented only `generate()`
+    would let a bug in the adapter-switching path pass every test.
+
+    With the adapter disabled it returns `base_responses` instead, so a test can prove the
+    two paths genuinely differ rather than merely both returning something.
+
     Records every prompt it was given, so a test can assert the prompt actually reached
     the model rather than being dropped somewhere in the serving layer.
     """
 
-    def __init__(self, responses: Sequence[str] | None = None) -> None:
+    def __init__(
+        self,
+        responses: Sequence[str] | None = None,
+        base_responses: Sequence[str] | None = None,
+        has_adapter: bool = True,
+    ) -> None:
         self.responses = list(responses) if responses else ["SELECT 1"]
+        self.base_responses = list(base_responses) if base_responses else ["SELECT 0"]
+        self.has_adapter = has_adapter
         self.seen_prompts: list[str] = []
+        self.adapter_enabled = True
+
+    @contextlib.contextmanager
+    def base_only(self):
+        previous = self.adapter_enabled
+        self.adapter_enabled = False
+        try:
+            yield
+        finally:
+            self.adapter_enabled = previous
 
     def generate(self, prompts: Sequence[str]) -> list[str]:
         self.seen_prompts.extend(prompts)
-        return [self.responses[i % len(self.responses)] for i in range(len(prompts))]
+        pool = self.responses if self.adapter_enabled else self.base_responses
+        return [pool[i % len(pool)] for i in range(len(prompts))]
 
     # The serving layer calls one prompt at a time.
     def generate_one(self, prompt: str) -> str:

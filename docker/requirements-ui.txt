@@ -1,0 +1,7 @@
+# The UI container talks to the API over HTTP for live generation, but reads the metrics
+# and prediction artifacts directly, so it needs the package and pandas -- not torch.
+streamlit>=1.33
+requests>=2.31
+pandas>=2.2
+pyarrow>=15.0
+matplotlib>=3.8

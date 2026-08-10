@@ -37,7 +37,9 @@ These come from real runs on the real corpus and are reproducible with the comma
 | Spider downloaded and internally consistent | 7,000 train / 1,034 dev; 140 / 20 databases; **disjoint** | `python scripts/download_data.py` |
 | Gold-vs-gold execution accuracy (harness self-test) | **1.0000** over all 1,034 dev questions, 0 unexecutable | `python scripts/check_harness.py` |
 | Prompt length, all 7,000 train examples | mean 400.5 tok, p90 687, p99 2095; 2.34% truncate at 1024 | `python scripts/measure_lengths.py` |
-| Test suite | 111 passing, CPU-only, no model download | `pytest` |
+| Full training pipeline, toy model on CPU | runs end to end, artifacts well-formed | `python scripts/smoke_local.py` |
+| FastAPI serving the real base model | `SELECT COUNT(*) FROM singer` → executed → `6` | `uvicorn text2sql_lora.api.main:app` |
+| Test suite | 143 passing, CPU-only, no model download | `pytest` |
 
 The gold-vs-gold check is the one that matters most. It scores Spider's own gold queries
 *as if they were predictions*: a harness that cannot score a known-perfect system at 100%
@@ -51,6 +53,26 @@ pip install -e ".[dev]"
 python scripts/download_data.py                    # ~210 MB, two sources
 pytest
 python scripts/check_harness.py                    # harness self-test
+```
+
+Validate the whole training pipeline on CPU, with a toy model, in a couple of minutes —
+before spending a GPU session on it:
+
+```bash
+pip install -e ".[train]"
+python scripts/smoke_local.py
+```
+
+Serve it (after the training run has been ingested — see `docs/kaggle_run.md`):
+
+```bash
+pip install -e ".[serve,ui]"
+uvicorn text2sql_lora.api.main:app --reload
+streamlit run src/text2sql_lora/frontend/app.py
+```
+
+```bash
+docker compose up --build
 ```
 
 ## The task and the data
@@ -155,9 +177,40 @@ Training does not run locally.
 - **Kaggle T4:** LoRA training and the three evaluation passes, producing the LoRA adapter
   and `artifacts/metrics.json`.
 
-Local generation loads base + adapter on CPU and is **slow** — tens of seconds per query
-for a 1.5B model. That is expected, not a defect, and the demo defaults to a replay view
-of saved predictions for that reason.
+Local generation loads base + adapter on CPU and is slow. **Measured on an 8 GB laptop:
+23–35 s per query**, plus ~40 s one-off model load. That is expected, not a defect, and it
+is why the demo defaults to a replay view of saved predictions.
+
+One measurement worth recording, because the naive answer is wrong. At float32 the same
+query took **369 seconds** — the 1.5B model needs ~6.2 GB of weights, the machine had
+0.4 GB free, and it was paging to disk. Loading in bfloat16 halves the weights to ~3.1 GB,
+they fit in RAM, and the query drops to **23 s: a 16× speedup**. The usual advice that
+"CPU bf16 is slower than fp32" is about arithmetic throughput and only holds once the
+weights fit; when they do not, memory traffic dominates everything else. Serving therefore
+defaults to bfloat16, overridable with `T2S_SERVING_DTYPE=float32`.
+
+Note that serving dtype does perturb greedy decoding slightly — the same question produced
+`COUNT(DISTINCT Singer_ID)` at fp32 and `COUNT(*)` at bf16 (both correct, both returning 6).
+The reported metrics are unaffected: they are computed in a single GPU run where all three
+systems share one dtype and one decoding path.
+
+## Deployment
+
+**FastAPI** — `POST /generate` takes a question plus either a Spider `db_id` or raw
+`CREATE TABLE` text, and returns SQL. `use_adapter: false` serves the untouched base model
+from the *same loaded weights*, and `execute: true` runs the result against the real
+database. `POST /compare` returns both systems for one input. `GET /metrics` serves
+`artifacts/metrics.json` — and 404s before a training run has been ingested, because the
+API never invents numbers.
+
+**Streamlit** — two tabs. *Replay* browses all 1,034 dev questions with every system's
+prediction already computed, so comparisons are instant and are the same predictions the
+headline was computed from. *Live* generates from a typed question, and says plainly that
+CPU generation takes tens of seconds.
+
+**Docker** — `api` + `ui`, with `artifacts/` and `data/` mounted read-only and a named
+volume for the Hub cache so the 3 GB base model downloads once. Trained weights live
+outside the image: the adapter is the output of a run, not part of the code.
 
 ## Layout
 
@@ -167,13 +220,31 @@ src/text2sql_lora/
   data/            schema serialization, prompts, db-disjoint splits, Spider loading
   eval/            execution, metrics, harness    <- the metric lives here, once
   models/          base+adapter loading, and a stub for CPU tests
+  train/           LoRA SFT; imported by the notebook, never run locally
+  api/  frontend/  FastAPI service and Streamlit demo
 tests/             mirrors src/
-scripts/           download_data, measure_lengths, check_harness, report
+scripts/           download_data, measure_lengths, check_harness, smoke_local, report
 notebooks/         the Kaggle training notebook
+docs/kaggle_run.md the GPU handoff: what to attach, what to download, where it goes
 ```
 
 The Kaggle notebook imports `text2sql_lora.eval` from this repo rather than redefining
 anything. There is exactly one implementation of the metric, and the tests cover it.
+
+`scripts/report.py` writes the results tables into this README between generated markers;
+`--check` re-renders and fails if anything drifted. That is the mechanism behind the rule
+that no number appears here that did not come out of a real run — and it is itself tested,
+by tampering with a number and asserting the check fails.
+
+## Known limitations
+
+- Execution accuracy here is set-comparison, not Yale's official test-suite EX. Stated
+  above; the delta is unaffected.
+- Schemas are serialized without example column values. Including them is known to help
+  and is the most obvious next improvement.
+- Spider's *test* split is hidden behind the official leaderboard, so dev is the held-out
+  set — as it is in essentially every published Spider result.
+- SFT only. DPO/RLHF is deliberately out of scope, not overlooked.
 
 ## License
 
