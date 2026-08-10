@@ -24,7 +24,7 @@ import streamlit as st
 from text2sql_lora.config import Paths
 from text2sql_lora.data.schema import parse_tables_json, render_schema
 
-st.set_page_config(page_title="Text-to-SQL: base vs LoRA", page_icon="::", layout="wide")
+st.set_page_config(page_title="Text-to-SQL: base vs LoRA", page_icon="🗄️", layout="wide")
 
 PATHS = Paths()
 SYSTEMS = ["base_zero_shot", "base_few_shot", "lora_zero_shot"]
@@ -72,7 +72,7 @@ if metrics is None:
         "**No `artifacts/metrics.json` yet.** The training run has not been ingested, so "
         "there are no results to show. Run `notebooks/kaggle_lora_sft.ipynb` on a GPU and "
         "unzip its output into `artifacts/` — see `docs/kaggle_run.md`.",
-        icon="!",
+        icon="⚠️",
     )
 
 # --- headline ----------------------------------------------------------------
@@ -104,6 +104,10 @@ with tab_results:
     else:
         st.subheader("Execution accuracy on Spider dev")
         table = pd.DataFrame(metrics["results"]).T
+        # Force weakest -> strongest order. Left to itself the chart sorts labels
+        # alphabetically, which puts the 3-shot baseline before the zero-shot one and
+        # makes the progression read backwards.
+        table = table.reindex([s for s in SYSTEMS if s in table.index])
         table.index = [SYSTEM_LABELS.get(name, name) for name in table.index]
         st.dataframe(
             table[["n", "execution_accuracy", "exact_match", "invalid_sql_rate"]].style.format(
@@ -215,10 +219,11 @@ with tab_replay:
 
 with tab_live:
     st.warning(
-        "Generation runs on CPU. A 1.5B model takes **tens of seconds** per query, and "
-        "this generates twice (adapter off, then on). That is expected — the GPU was used "
-        "for training, not for serving.",
-        icon="!",
+        "Generation runs on CPU. Measured on an 8 GB laptop: **23-35 s per query**, and "
+        "this generates twice (adapter off, then on), so expect **~1 minute** — plus a "
+        "one-off ~40 s model load on the first request. That is expected; the GPU was "
+        "used for training, not for serving. The Replay tab is instant.",
+        icon="⚠️",
     )
 
     if not schemas:
