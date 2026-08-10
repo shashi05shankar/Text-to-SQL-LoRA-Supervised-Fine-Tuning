@@ -322,6 +322,85 @@ def render_analysis(analysis: dict) -> str:
     return "\n".join(lines)
 
 
+def render_experiments(experiments: dict) -> str:
+    """The LoRA-vs-QLoRA comparison table, from `scripts/collect_experiments.py`.
+
+    Only rendered once at least two arms exist -- a single arm is just the headline run
+    and has nothing to compare against.
+    """
+    arms = experiments.get("arms", [])
+    if len(arms) < 2:
+        return ""
+
+    def fmt(value, spec: str, dash: str = "—") -> str:
+        return format(value, spec) if value is not None else dash
+
+    lines = [
+        "",
+        "---",
+        "",
+        "### LoRA vs QLoRA — what the quantization actually costs",
+        "",
+        "The published run used QLoRA (4-bit NF4 base). QLoRA was not *required* at this "
+        "size — fp16 LoRA fits a 16 GB T4 too. So this runs the identical recipe (same "
+        "seed, data, split, rank, epochs, batch, LR) with **only** the base precision "
+        "changed, and measures the trade.",
+        "",
+        "| Arm | Base precision | Execution accuracy | Wall clock | Peak VRAM | Adapter |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for arm in arms:
+        precision = "4-bit NF4" if arm["quantization"] == "nf4" else "fp16"
+        lines.append(
+            f"| `{arm['name']}` | {precision} | "
+            f"{fmt(arm['tuned_execution_accuracy'], '.4f')} | "
+            f"{fmt(arm['wall_clock_hours'], '.1f')} h | "
+            f"{fmt(arm['peak_vram_gb'], '.2f')} GB | "
+            f"{fmt(arm['adapter_mb'], '.0f')} MB |"
+        )
+
+    # Draw the conclusion from the data rather than asserting it.
+    nf4 = next((a for a in arms if a["quantization"] == "nf4"), None)
+    fp16 = next((a for a in arms if a["quantization"] == "none"), None)
+    if nf4 and fp16 and nf4["tuned_execution_accuracy"] and fp16["tuned_execution_accuracy"]:
+        acc_gap = fp16["tuned_execution_accuracy"] - nf4["tuned_execution_accuracy"]
+        lines += ["", _experiment_verdict(nf4, fp16, acc_gap)]
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _experiment_verdict(nf4: dict, fp16: dict, acc_gap: float) -> str:
+    """One honest sentence about which arm won, computed from the arms."""
+    parts = []
+    if abs(acc_gap) < 0.01:
+        parts.append(
+            f"Accuracy is effectively tied ({acc_gap:+.4f}, within a point)"
+        )
+    elif acc_gap > 0:
+        parts.append(f"fp16 LoRA is **{acc_gap:+.4f}** more accurate")
+    else:
+        parts.append(f"4-bit QLoRA is **{-acc_gap:+.4f}** more accurate")
+
+    if nf4.get("wall_clock_hours") and fp16.get("wall_clock_hours"):
+        faster = "fp16" if fp16["wall_clock_hours"] < nf4["wall_clock_hours"] else "4-bit"
+        ratio = max(nf4["wall_clock_hours"], fp16["wall_clock_hours"]) / min(
+            nf4["wall_clock_hours"], fp16["wall_clock_hours"]
+        )
+        parts.append(f"{faster} trained {ratio:.2f}x faster")
+
+    if nf4.get("peak_vram_gb") and fp16.get("peak_vram_gb"):
+        parts.append(
+            f"4-bit used {fp16['peak_vram_gb'] - nf4['peak_vram_gb']:+.2f} GB less VRAM"
+        )
+
+    return (
+        ". ".join(parts)
+        + ". Both ran on the same GPU at the same batch and sequence length, which is "
+        "what makes the wall-clock and VRAM figures comparable."
+    )
+
+
 def splice(readme: str, block: str) -> str:
     if BEGIN not in readme or END not in readme:
         raise SystemExit(f"README is missing the {BEGIN!r} / {END!r} markers")
@@ -356,7 +435,14 @@ def main() -> int:
         else {}
     )
 
-    block = render(metrics) + render_analysis(analysis)
+    experiments_path = paths.artifacts_dir / "experiments.json"
+    experiments = (
+        json.loads(experiments_path.read_text(encoding="utf-8"))
+        if experiments_path.exists()
+        else {}
+    )
+
+    block = render(metrics) + render_analysis(analysis) + render_experiments(experiments)
 
     target = args.check or args.readme
     readme = target.read_text(encoding="utf-8")

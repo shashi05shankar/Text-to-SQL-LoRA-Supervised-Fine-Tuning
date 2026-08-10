@@ -149,6 +149,61 @@ def test_lora_trains_a_small_fraction_and_freezes_the_base(tiny_model_dir):
     assert all("lora_" in name for name in trainable_names)
 
 
+def test_gradients_reach_lora_params_with_gradient_checkpointing(
+    tiny_model_dir, tiny_data, tokenizer
+):
+    """Gradients must actually reach the LoRA matrices under gradient checkpointing.
+
+    This is the failure that has no symptom: if the checkpointed segment sees no
+    differentiable input, nothing raises, the loss simply sits flat and the saved adapter
+    is untrained. It cannot be caught by watching for exceptions -- only by asserting on
+    the backward pass.
+
+    On the pinned stack the guard in `attach_lora` turns out to be a no-op (measured: the
+    same gradient flow with and without it, under both reentrant modes). The assertion is
+    what makes that a *verified* fact rather than an assumption, and it is what will fail
+    if a future torch/peft upgrade reintroduces the problem.
+    """
+    from transformers import AutoModelForCausalLM
+
+    base = AutoModelForCausalLM.from_pretrained(str(tiny_model_dir))
+    base.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    model = attach_lora(base, LoraConfig(r=4, alpha=8), for_training=True)
+    model.config.use_cache = False
+    model.train()
+
+    dataset = SupervisedDataset(tiny_data, tokenizer, max_seq_len=128)
+    batch = PadCollator(tokenizer.pad_token_id)([dataset[0], dataset[1]])
+
+    loss = model(**batch).loss
+    loss.backward()
+
+    lora_params = {
+        name: p for name, p in model.named_parameters() if p.requires_grad and "lora_" in name
+    }
+    assert lora_params, "no trainable LoRA parameters were created"
+
+    with_grad = {n: p for n, p in lora_params.items() if p.grad is not None}
+    assert with_grad, "gradient checkpointing severed the graph; no LoRA parameter got a gradient"
+
+    # A gradient of exactly zero everywhere is the same failure wearing a disguise.
+    assert any(p.grad.abs().sum().item() > 0 for p in with_grad.values()), (
+        "every LoRA gradient was exactly zero -- the backward pass did not reach them"
+    )
+
+
+def test_base_weights_receive_no_gradient(tiny_model_dir):
+    """The other half of the contract: LoRA must train, the base must not."""
+    from transformers import AutoModelForCausalLM
+
+    base = AutoModelForCausalLM.from_pretrained(str(tiny_model_dir))
+    model = attach_lora(base, LoraConfig(r=4, alpha=8), for_training=True)
+
+    trainable = [n for n, p in model.named_parameters() if p.requires_grad]
+    assert trainable
+    assert all("lora_" in name for name in trainable)
+
+
 # --- the full loop -----------------------------------------------------------
 
 
@@ -271,3 +326,25 @@ def test_manifest_records_the_run(tmp_path):
     assert manifest["trainable_percent"] == 1.0
     assert manifest["torch"] and manifest["transformers"] and manifest["created_utc"]
     assert manifest["lora"]["r"] == LoraConfig().r
+    # The arm is self-describing: default TrainConfig is 4-bit.
+    assert manifest["quantization"] == "nf4"
+
+
+def test_manifest_records_the_quantization_arm():
+    """Each LoRA-vs-QLoRA arm must be identifiable from its own artifact alone."""
+    from text2sql_lora.train.sft import build_manifest
+
+    common = {
+        "params": {"trainable_params": 100, "total_params": 10_000, "trainable_percent": 1.0},
+        "n_train": 6300, "n_val": 700, "n_dev": 1034,
+        "truncation_rate": 0.0234, "wall_clock_seconds": 123.4, "device": "cpu",
+    }
+    qlora = build_manifest(
+        DataConfig(), LoraConfig(), TrainConfig(load_in_4bit=True), EvalConfig(), **common
+    )
+    lora = build_manifest(
+        DataConfig(), LoraConfig(), TrainConfig(load_in_4bit=False), EvalConfig(), **common
+    )
+
+    assert qlora["quantization"] == "nf4"
+    assert lora["quantization"] == "none"

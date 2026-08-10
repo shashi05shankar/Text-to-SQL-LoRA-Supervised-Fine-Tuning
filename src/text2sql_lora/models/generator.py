@@ -140,17 +140,41 @@ def load_base_model(
     return model
 
 
-def attach_lora(model, lora_config: LoraConfig | None = None, for_training: bool = True):
-    """Wrap the frozen base model in freshly initialized LoRA adapters."""
+def attach_lora(
+    model,
+    lora_config: LoraConfig | None = None,
+    for_training: bool = True,
+    gradient_checkpointing: bool = True,
+):
+    """Wrap the frozen base model in freshly initialized LoRA adapters.
+
+    Two paths, because a 4-bit base needs preparation an fp16 one does not:
+
+    * **4-bit base** -- `prepare_model_for_kbit_training` casts layer norms to fp32 and
+      enables input grads. Quantized training needs the fp32 norms.
+    * **Unquantized base** -- `enable_input_require_grads()` is called defensively.
+
+    On the versions pinned here (torch 2.13, peft 0.20) that second call is a **no-op**:
+    gradient flow to the LoRA matrices was measured identical with and without it, under
+    both `use_reentrant=True` and `False`. It is kept because it is the documented pattern
+    for LoRA under gradient checkpointing and costs nothing -- older stacks *did* need it,
+    where the checkpointed segment saw no differentiable input, silently produced no
+    gradient, and left the loss flat with an untrained adapter.
+
+    `tests/train/test_sft_smoke.py` asserts the contract directly rather than trusting
+    any of this: LoRA parameters must receive non-zero gradients, and base weights must
+    receive none.
+    """
     from peft import LoraConfig as PeftLoraConfig
     from peft import get_peft_model, prepare_model_for_kbit_training
 
     lora_config = lora_config or LoraConfig()
 
-    if for_training and getattr(model, "is_loaded_in_4bit", False):
-        # Casts layer norms to fp32 and enables input grads -- without this, gradient
-        # checkpointing over a quantized base produces no gradients at all.
-        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    if for_training and gradient_checkpointing:
+        if getattr(model, "is_loaded_in_4bit", False):
+            model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+        elif hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
 
     peft_config = PeftLoraConfig(
         r=lora_config.r,

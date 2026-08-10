@@ -361,6 +361,16 @@ Base weights stay frozen and 4-bit quantized (QLoRA). For each targeted projecti
 `W (d×k)`, LoRA learns `A (r×k)` and `B (d×r)`, and the forward pass becomes
 `W·x + (α/r)·B·A·x`. Only `A` and `B` receive gradients.
 
+**Why QLoRA and not plain LoRA?** Honestly, at 1.5B it was a headroom choice, not a
+requirement — fp16 LoRA fits a 16 GB T4 too (~4.8 GB vs ~2.6 GB). QLoRA earns its place
+for two reasons: the ≤8 GB budget (it must fit a friend's 8 GB laptop GPU), and
+scale-invariance — the same recipe runs 7B unchanged, where fp16 weights alone (~15 GB)
+would not fit. `notebooks/kaggle_lora_vs_qlora.ipynb` measures the trade directly
+(accuracy, wall clock, peak VRAM) rather than leaving it as an argument; run its
+`lora_fp16` arm and `scripts/report.py` folds a comparison table in here. At inference the
+quantization is dropped entirely: bitsandbytes 4-bit is CUDA-only, so the CPU server loads
+the same adapter on a bf16 base (see the CPU-latency note above).
+
 | | |
 | --- | --- |
 | Base model | `Qwen/Qwen2.5-1.5B-Instruct` — Apache-2.0, ungated |

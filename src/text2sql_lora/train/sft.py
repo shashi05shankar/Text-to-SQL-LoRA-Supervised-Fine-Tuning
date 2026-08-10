@@ -352,6 +352,9 @@ def build_manifest(
         "torch": torch.__version__,
         "transformers": transformers.__version__,
         "device": device,
+        # Self-describing, so an arm's artifact says which recipe produced it without
+        # having to infer it from the surrounding config.
+        "quantization": "nf4" if train_config.load_in_4bit else "none",
         "base_model": data_config.base_model,
         "seed": data_config.seed,
         "n_train": n_train,
@@ -375,6 +378,13 @@ def build_manifest(
         manifest["gpu"] = torch.cuda.get_device_name(0)
         major, minor = torch.cuda.get_device_capability(0)
         manifest["gpu_compute_capability"] = f"{major}.{minor}"
+        # Peak allocation over the whole run. This is the number that decides whether a
+        # recipe fits a given card, and it is the entire point of comparing 4-bit against
+        # fp16 -- an accuracy-only comparison would miss what QLoRA is actually for.
+        # `torch.cuda.memory_allocated` counts tensors, not the caching allocator's
+        # reserve, so it is the fair like-for-like figure between arms.
+        manifest["peak_vram_bytes"] = int(torch.cuda.max_memory_allocated())
+        manifest["peak_vram_gb"] = torch.cuda.max_memory_allocated() / 1e9
     return manifest
 
 
@@ -394,6 +404,16 @@ def run(
 ) -> dict:
     """The full run: train, evaluate three systems, write artifacts. Returns the payload."""
     started = time.perf_counter()
+
+    # Zero the peak-memory counter so `peak_vram_bytes` in the manifest reflects THIS run,
+    # not a smoke run or an earlier arm sharing the same process.
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()
+    except ImportError:
+        pass
 
     paths = paths or Paths()
     data_config = data_config or DataConfig()

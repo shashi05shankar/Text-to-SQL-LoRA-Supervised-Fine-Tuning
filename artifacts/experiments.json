@@ -1,0 +1,22 @@
+{
+  "arms": [
+    {
+      "name": "nf4_published",
+      "quantization": "nf4",
+      "base_model": "Qwen/Qwen2.5-1.5B-Instruct",
+      "seed": 42,
+      "epochs": 3.0,
+      "lora_rank": 16,
+      "base_execution_accuracy": 0.41005802707930367,
+      "tuned_execution_accuracy": 0.6547388781431335,
+      "absolute_gain": 0.2446808510638298,
+      "tuned_invalid_sql_rate": 0.14990328820116053,
+      "wall_clock_seconds": 15221.748924261,
+      "wall_clock_hours": 4.2282635900725,
+      "peak_vram_gb": null,
+      "adapter_mb": 85.342487,
+      "gpu": "Tesla T4"
+    }
+  ],
+  "n_arms": 1
+}

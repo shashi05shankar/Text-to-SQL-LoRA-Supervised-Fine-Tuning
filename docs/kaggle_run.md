@@ -102,3 +102,31 @@ smoke checkpoint exists specifically so that a rerun costs minutes of diagnosis,
 **The gain is small.** Report it anyway. A modest honest number you can defend beats a
 large one you cannot, and the three-system comparison (base zero-shot / base few-shot /
 tuned) is what makes even a small delta interpretable.
+
+---
+
+## Optional: the LoRA vs QLoRA ablation
+
+`notebooks/kaggle_lora_vs_qlora.ipynb` runs the identical recipe with **only** the base
+precision changed, to measure what 4-bit quantization actually costs (accuracy) and saves
+(VRAM).
+
+1. Set `ARM = "lora_fp16"` in the arm-selection cell (the second cell). The default QLoRA
+   run is already published, so this fp16 arm is the only one that needs GPU time.
+2. Run all cells. It writes `artifacts/experiments/lora_fp16/`, and the last cell zips it.
+3. Locally: unzip into `artifacts/experiments/lora_fp16/`, then
+
+   ```bash
+   python scripts/collect_experiments.py     # merges the fp16 arm with the published QLoRA one
+   python scripts/report.py                   # renders the LoRA-vs-QLoRA table into the README
+   python scripts/report.py --check README.md
+   ```
+
+The comparison table (accuracy, wall clock, peak VRAM, adapter size) appears only once two
+arms exist. Expected: fp16 trains somewhat faster (no per-step dequantization on Turing)
+and uses more VRAM (~4.8 GB vs ~2.6 GB), with accuracy close — but the point is to
+**measure** that, not assume it.
+
+Running the `qlora_nf4` arm here too is optional. It reproduces the published number on
+the same hardware, which makes the VRAM and wall-clock figures exactly like-for-like
+rather than comparing against a run from a different session.
