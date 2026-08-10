@@ -203,6 +203,107 @@ def test_check_mode_catches_a_hand_edited_number(report, metrics, tmp_path, monk
     assert report.main() == 1
 
 
+@pytest.fixture
+def analysis() -> dict:
+    return {
+        "n": 1034,
+        "accuracy": {
+            "base_zero_shot": {"accuracy": 0.41, "ci_low": 0.38, "ci_high": 0.44},
+            "lora_zero_shot": {"accuracy": 0.65, "ci_low": 0.62, "ci_high": 0.68},
+        },
+        "comparisons": {
+            "lora_zero_shot_vs_base_zero_shot": {
+                "baseline": "base_zero_shot",
+                "candidate": "lora_zero_shot",
+                "mcnemar": {"gained": 308, "lost": 55, "p_value": 6.16e-40,
+                            "significant_at_05": True},
+                "bootstrap": {"ci_low": 0.21, "ci_high": 0.28},
+            },
+            "base_few_shot_vs_base_zero_shot": {
+                "baseline": "base_zero_shot",
+                "candidate": "base_few_shot",
+                "mcnemar": {"gained": 134, "lost": 132, "p_value": 0.951,
+                            "significant_at_05": False},
+                "bootstrap": {"ci_low": -0.029, "ci_high": 0.034},
+            },
+        },
+        "failures": {
+            "base_zero_shot": {
+                "n": 1034, "n_correct": 424, "invalid_rate": 0.325,
+                "semantic_error_rate": 0.265, "semantic_share_of_errors": 0.449,
+                "by_kind": {"correct": {"n": 424, "rate": 0.41},
+                            "invalid: no such column": {"n": 257, "rate": 0.2485}},
+            },
+            "lora_zero_shot": {
+                "n": 1034, "n_correct": 677, "invalid_rate": 0.150,
+                "semantic_error_rate": 0.195, "semantic_share_of_errors": 0.566,
+                "by_kind": {"correct": {"n": 677, "rate": 0.65},
+                            "invalid: no such column": {"n": 141, "rate": 0.1364}},
+            },
+        },
+        "grounding": {
+            "base_zero_shot": {"parse_rate": 0.9942, "grounded_rate": 0.7311},
+            "lora_zero_shot": {"parse_rate": 1.0, "grounded_rate": 0.8849},
+        },
+        "components": {
+            "base_zero_shot": {"clause_f1": 0.6986, "join_count_match_rate": 0.5619,
+                               "aggregate_match_rate": 0.8723,
+                               "exact_shape_match_rate": 0.3066},
+            "lora_zero_shot": {"clause_f1": 0.9164, "join_count_match_rate": 0.8182,
+                               "aggregate_match_rate": 0.9381,
+                               "exact_shape_match_rate": 0.7166},
+        },
+        "efficiency": {
+            "adapter_mb": 85.3, "trainable_params": 18_464_768,
+            "gpu": "Tesla T4", "wall_clock_hours": 4.23, "examples_per_second": 1.24,
+        },
+    }
+
+
+def test_analysis_reports_significance_verdicts(report, analysis):
+    block = report.render_analysis(analysis)
+
+    assert "6.16e-40" in block
+    assert "**significant**" in block
+    assert "not significant" in block  # the few-shot comparison
+
+
+def test_analysis_states_the_few_shot_null_result_plainly(report, analysis):
+    """The most important sentence in the whole report: prompting did not do this."""
+    block = report.render_analysis(analysis)
+    assert "statistically indistinguishable" in block
+
+
+def test_analysis_includes_failure_taxonomy_and_structure(report, analysis):
+    block = report.render_analysis(analysis)
+
+    assert "invalid: no such column" in block
+    assert "Semantic share of errors" in block
+    assert "Fully grounded" in block
+    assert "0.8849" in block  # tuned grounding rate
+
+
+def test_analysis_reports_cost(report, analysis):
+    block = report.render_analysis(analysis)
+
+    assert "85 MB" in block
+    assert "Tesla T4" in block
+    assert "18,464,768" in block
+
+
+def test_analysis_block_is_empty_without_analysis(report):
+    """report.py must still work from metrics.json alone."""
+    assert report.render_analysis({}) == ""
+
+
+def test_full_render_composes_both_blocks(report, metrics, analysis):
+    combined = report.render(metrics) + report.render_analysis(analysis)
+
+    assert "### Headline" in combined
+    assert "### Is the difference real?" in combined
+    assert "### What it got structurally right" in combined
+
+
 def test_missing_metrics_is_a_failure_not_an_empty_report(report, tmp_path, monkeypatch):
     from text2sql_lora.config import Paths
 

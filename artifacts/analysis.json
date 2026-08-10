@@ -1,0 +1,674 @@
+{
+  "n": 1034,
+  "accuracy": {
+    "base_zero_shot": {
+      "n": 1034,
+      "correct": 424,
+      "accuracy": 0.41005802707930367,
+      "ci_low": 0.38046575800045623,
+      "ci_high": 0.4403161172858201
+    },
+    "base_few_shot": {
+      "n": 1034,
+      "correct": 426,
+      "accuracy": 0.4119922630560928,
+      "ci_low": 0.3823716343662452,
+      "ci_high": 0.4422643941396811
+    },
+    "lora_zero_shot": {
+      "n": 1034,
+      "correct": 677,
+      "accuracy": 0.6547388781431335,
+      "ci_low": 0.6252343188017173,
+      "ci_high": 0.6830979387702802
+    }
+  },
+  "comparisons": {
+    "lora_zero_shot_vs_base_zero_shot": {
+      "baseline": "base_zero_shot",
+      "candidate": "lora_zero_shot",
+      "baseline_accuracy": 0.41005802707930367,
+      "candidate_accuracy": 0.6547388781431335,
+      "baseline_ci": [
+        0.38046575800045623,
+        0.4403161172858201
+      ],
+      "candidate_ci": [
+        0.6252343188017173,
+        0.6830979387702802
+      ],
+      "delta": 0.2446808510638298,
+      "mcnemar": {
+        "gained": 308,
+        "lost": 55,
+        "net": 253,
+        "agree_correct": 369,
+        "agree_wrong": 302,
+        "discordant": 363,
+        "chi2": 174.94214876033058,
+        "p_value": 6.163677609020776e-40,
+        "method": "chi-square (continuity-corrected)",
+        "significant_at_05": true
+      },
+      "bootstrap": {
+        "delta": 0.24468085106382978,
+        "ci_low": 0.21179883945841393,
+        "ci_high": 0.27852998065764023,
+        "n_resamples": 5000,
+        "excludes_zero": true
+      }
+    },
+    "lora_zero_shot_vs_base_few_shot": {
+      "baseline": "base_few_shot",
+      "candidate": "lora_zero_shot",
+      "baseline_accuracy": 0.4119922630560928,
+      "candidate_accuracy": 0.6547388781431335,
+      "baseline_ci": [
+        0.3823716343662452,
+        0.4422643941396811
+      ],
+      "candidate_ci": [
+        0.6252343188017173,
+        0.6830979387702802
+      ],
+      "delta": 0.24274661508704065,
+      "mcnemar": {
+        "gained": 306,
+        "lost": 55,
+        "net": 251,
+        "agree_correct": 371,
+        "agree_wrong": 302,
+        "discordant": 361,
+        "chi2": 173.13019390581718,
+        "p_value": 1.532979925085861e-39,
+        "method": "chi-square (continuity-corrected)",
+        "significant_at_05": true
+      },
+      "bootstrap": {
+        "delta": 0.24274661508704062,
+        "ci_low": 0.20986460348162475,
+        "ci_high": 0.27562862669245647,
+        "n_resamples": 5000,
+        "excludes_zero": true
+      }
+    },
+    "base_few_shot_vs_base_zero_shot": {
+      "baseline": "base_zero_shot",
+      "candidate": "base_few_shot",
+      "baseline_accuracy": 0.41005802707930367,
+      "candidate_accuracy": 0.4119922630560928,
+      "baseline_ci": [
+        0.38046575800045623,
+        0.4403161172858201
+      ],
+      "candidate_ci": [
+        0.3823716343662452,
+        0.4422643941396811
+      ],
+      "delta": 0.001934235976789156,
+      "mcnemar": {
+        "gained": 134,
+        "lost": 132,
+        "net": 2,
+        "agree_correct": 292,
+        "agree_wrong": 476,
+        "discordant": 266,
+        "chi2": 0.0037593984962406013,
+        "p_value": 0.9511091939949962,
+        "method": "chi-square (continuity-corrected)",
+        "significant_at_05": false
+      },
+      "bootstrap": {
+        "delta": 0.0019342359767891683,
+        "ci_low": -0.029013539651837523,
+        "ci_high": 0.033849129593810444,
+        "n_resamples": 5000,
+        "excludes_zero": false
+      }
+    }
+  },
+  "failures": {
+    "base_zero_shot": {
+      "system": "base_zero_shot",
+      "n": 1034,
+      "n_correct": 424,
+      "n_invalid": 336,
+      "n_semantic_error": 274,
+      "invalid_rate": 0.32495164410058025,
+      "semantic_error_rate": 0.26499032882011603,
+      "semantic_share_of_errors": 0.4491803278688525,
+      "by_kind": {
+        "correct": {
+          "n": 424,
+          "rate": 0.41005802707930367
+        },
+        "invalid: no such column": {
+          "n": 257,
+          "rate": 0.24854932301740812
+        },
+        "wrong: same shape, different values": {
+          "n": 96,
+          "rate": 0.09284332688588008
+        },
+        "wrong: wrong number of rows": {
+          "n": 85,
+          "rate": 0.08220502901353965
+        },
+        "wrong: returned no rows": {
+          "n": 65,
+          "rate": 0.06286266924564797
+        },
+        "invalid: no such table": {
+          "n": 45,
+          "rate": 0.043520309477756286
+        },
+        "wrong: wrong number of columns": {
+          "n": 19,
+          "rate": 0.0183752417794971
+        },
+        "invalid: aggregate misuse": {
+          "n": 19,
+          "rate": 0.0183752417794971
+        },
+        "invalid: syntax error": {
+          "n": 12,
+          "rate": 0.01160541586073501
+        },
+        "wrong: returned rows, gold returned none": {
+          "n": 8,
+          "rate": 0.007736943907156673
+        },
+        "invalid: ambiguous column": {
+          "n": 2,
+          "rate": 0.0019342359767891683
+        },
+        "wrong: right rows, wrong order": {
+          "n": 1,
+          "rate": 0.0009671179883945841
+        },
+        "invalid: timeout": {
+          "n": 1,
+          "rate": 0.0009671179883945841
+        }
+      }
+    },
+    "base_few_shot": {
+      "system": "base_few_shot",
+      "n": 1034,
+      "n_correct": 426,
+      "n_invalid": 329,
+      "n_semantic_error": 279,
+      "invalid_rate": 0.3181818181818182,
+      "semantic_error_rate": 0.269825918762089,
+      "semantic_share_of_errors": 0.4588815789473684,
+      "by_kind": {
+        "correct": {
+          "n": 426,
+          "rate": 0.4119922630560928
+        },
+        "invalid: no such column": {
+          "n": 266,
+          "rate": 0.2572533849129594
+        },
+        "wrong: same shape, different values": {
+          "n": 92,
+          "rate": 0.08897485493230174
+        },
+        "wrong: wrong number of rows": {
+          "n": 71,
+          "rate": 0.06866537717601548
+        },
+        "wrong: returned no rows": {
+          "n": 58,
+          "rate": 0.05609284332688588
+        },
+        "wrong: wrong number of columns": {
+          "n": 52,
+          "rate": 0.05029013539651837
+        },
+        "invalid: no such table": {
+          "n": 34,
+          "rate": 0.03288201160541586
+        },
+        "invalid: aggregate misuse": {
+          "n": 14,
+          "rate": 0.013539651837524178
+        },
+        "invalid: syntax error": {
+          "n": 10,
+          "rate": 0.009671179883945842
+        },
+        "wrong: returned rows, gold returned none": {
+          "n": 5,
+          "rate": 0.004835589941972921
+        },
+        "invalid: ambiguous column": {
+          "n": 4,
+          "rate": 0.0038684719535783366
+        },
+        "wrong: right rows, wrong order": {
+          "n": 1,
+          "rate": 0.0009671179883945841
+        },
+        "invalid: other": {
+          "n": 1,
+          "rate": 0.0009671179883945841
+        }
+      }
+    },
+    "lora_zero_shot": {
+      "system": "lora_zero_shot",
+      "n": 1034,
+      "n_correct": 677,
+      "n_invalid": 155,
+      "n_semantic_error": 202,
+      "invalid_rate": 0.14990328820116053,
+      "semantic_error_rate": 0.195357833655706,
+      "semantic_share_of_errors": 0.5658263305322129,
+      "by_kind": {
+        "correct": {
+          "n": 677,
+          "rate": 0.6547388781431335
+        },
+        "invalid: no such column": {
+          "n": 141,
+          "rate": 0.13636363636363635
+        },
+        "wrong: same shape, different values": {
+          "n": 84,
+          "rate": 0.08123791102514506
+        },
+        "wrong: wrong number of rows": {
+          "n": 55,
+          "rate": 0.05319148936170213
+        },
+        "wrong: returned no rows": {
+          "n": 36,
+          "rate": 0.03481624758220503
+        },
+        "wrong: wrong number of columns": {
+          "n": 14,
+          "rate": 0.013539651837524178
+        },
+        "invalid: no such table": {
+          "n": 10,
+          "rate": 0.009671179883945842
+        },
+        "wrong: returned rows, gold returned none": {
+          "n": 8,
+          "rate": 0.007736943907156673
+        },
+        "wrong: right rows, wrong order": {
+          "n": 5,
+          "rate": 0.004835589941972921
+        },
+        "invalid: syntax error": {
+          "n": 2,
+          "rate": 0.0019342359767891683
+        },
+        "invalid: ambiguous column": {
+          "n": 1,
+          "rate": 0.0009671179883945841
+        },
+        "invalid: aggregate misuse": {
+          "n": 1,
+          "rate": 0.0009671179883945841
+        }
+      }
+    }
+  },
+  "grounding": {
+    "base_zero_shot": {
+      "n": 1034,
+      "parse_rate": 0.9941972920696325,
+      "grounded_rate": 0.7311411992263056,
+      "hallucinated_column_rate": 0.23597678916827852,
+      "hallucinated_table_rate": 0.043520309477756286,
+      "top_hallucinated_columns": [
+        {
+          "identifier": "cars_data.make",
+          "n": 19
+        },
+        {
+          "identifier": "cars_data.model",
+          "n": 11
+        },
+        {
+          "identifier": "concert.singer_id",
+          "n": 7
+        },
+        {
+          "identifier": "poker_player.name",
+          "n": 7
+        },
+        {
+          "identifier": "templates.template_type_description",
+          "n": 6
+        },
+        {
+          "identifier": "car_makers.model",
+          "n": 5
+        },
+        {
+          "identifier": "car_names.mpg",
+          "n": 5
+        },
+        {
+          "identifier": "players.winner_name",
+          "n": 5
+        },
+        {
+          "identifier": "student_enrolment.course_id",
+          "n": 5
+        },
+        {
+          "identifier": "tv_channel.title",
+          "n": 5
+        }
+      ]
+    },
+    "base_few_shot": {
+      "n": 1034,
+      "parse_rate": 0.995164410058027,
+      "grounded_rate": 0.7843326885880078,
+      "hallucinated_column_rate": 0.1885880077369439,
+      "hallucinated_table_rate": 0.03288201160541586,
+      "top_hallucinated_columns": [
+        {
+          "identifier": "student_enrolment.course_id",
+          "n": 7
+        },
+        {
+          "identifier": "tv_channel.channel",
+          "n": 7
+        },
+        {
+          "identifier": "cars_data.make",
+          "n": 6
+        },
+        {
+          "identifier": "car_makers.continent",
+          "n": 6
+        },
+        {
+          "identifier": "student_enrolment_courses.transcript_id",
+          "n": 6
+        },
+        {
+          "identifier": "tv_series.written_by",
+          "n": 5
+        },
+        {
+          "identifier": "countrypopulation",
+          "n": 5
+        },
+        {
+          "identifier": "car_names.maker",
+          "n": 4
+        },
+        {
+          "identifier": "cars_data.makeid",
+          "n": 4
+        },
+        {
+          "identifier": "student_enrolment.department_id",
+          "n": 4
+        }
+      ]
+    },
+    "lora_zero_shot": {
+      "n": 1034,
+      "parse_rate": 1.0,
+      "grounded_rate": 0.8849129593810445,
+      "hallucinated_column_rate": 0.109284332688588,
+      "hallucinated_table_rate": 0.009671179883945842,
+      "top_hallucinated_columns": [
+        {
+          "identifier": "cars_data.model",
+          "n": 12
+        },
+        {
+          "identifier": "car_makers.countryid",
+          "n": 5
+        },
+        {
+          "identifier": "petage",
+          "n": 4
+        },
+        {
+          "identifier": "car_makers.continent",
+          "n": 4
+        },
+        {
+          "identifier": "final_table_make",
+          "n": 4
+        },
+        {
+          "identifier": "pet_type",
+          "n": 3
+        },
+        {
+          "identifier": "model_list.fullname",
+          "n": 3
+        },
+        {
+          "identifier": "cars_data.maker",
+          "n": 3
+        },
+        {
+          "identifier": "car_makers.model",
+          "n": 3
+        },
+        {
+          "identifier": "players.winner_name",
+          "n": 3
+        }
+      ]
+    }
+  },
+  "components": {
+    "base_zero_shot": {
+      "n": 1034,
+      "clause_f1": 0.6986152306751919,
+      "clause_precision": 0.6551096067053513,
+      "clause_recall": 0.861073500967118,
+      "join_count_match_rate": 0.5618955512572534,
+      "select_width_match_rate": 0.9497098646034816,
+      "aggregate_match_rate": 0.8723404255319149,
+      "exact_shape_match_rate": 0.3065764023210832
+    },
+    "base_few_shot": {
+      "n": 1034,
+      "clause_f1": 0.7578730800684379,
+      "clause_precision": 0.7474279266832459,
+      "clause_recall": 0.8491295938104448,
+      "join_count_match_rate": 0.6170212765957447,
+      "select_width_match_rate": 0.90715667311412,
+      "aggregate_match_rate": 0.8578336557059961,
+      "exact_shape_match_rate": 0.3655705996131528
+    },
+    "lora_zero_shot": {
+      "n": 1034,
+      "clause_f1": 0.9163645992949668,
+      "clause_precision": 0.9298678272082528,
+      "clause_recall": 0.9363958736299162,
+      "join_count_match_rate": 0.8181818181818182,
+      "select_width_match_rate": 0.9845261121856866,
+      "aggregate_match_rate": 0.9381044487427466,
+      "exact_shape_match_rate": 0.7166344294003868
+    }
+  },
+  "per_database": [
+    {
+      "db_id": "car_1",
+      "n": 92,
+      "base_zero_shot": 0.20652173913043478,
+      "base_few_shot": 0.15217391304347827,
+      "lora_zero_shot": 0.3695652173913043,
+      "delta": 0.16304347826086957
+    },
+    {
+      "db_id": "world_1",
+      "n": 120,
+      "base_zero_shot": 0.16666666666666666,
+      "base_few_shot": 0.18333333333333332,
+      "lora_zero_shot": 0.4,
+      "delta": 0.23333333333333334
+    },
+    {
+      "db_id": "real_estate_properties",
+      "n": 4,
+      "base_zero_shot": 0.5,
+      "base_few_shot": 0.5,
+      "lora_zero_shot": 0.5,
+      "delta": 0.0
+    },
+    {
+      "db_id": "pets_1",
+      "n": 42,
+      "base_zero_shot": 0.40476190476190477,
+      "base_few_shot": 0.38095238095238093,
+      "lora_zero_shot": 0.5952380952380952,
+      "delta": 0.19047619047619047
+    },
+    {
+      "db_id": "dog_kennels",
+      "n": 82,
+      "base_zero_shot": 0.34146341463414637,
+      "base_few_shot": 0.32926829268292684,
+      "lora_zero_shot": 0.5975609756097561,
+      "delta": 0.25609756097560976
+    },
+    {
+      "db_id": "student_transcripts_tracking",
+      "n": 78,
+      "base_zero_shot": 0.23076923076923078,
+      "base_few_shot": 0.2948717948717949,
+      "lora_zero_shot": 0.6025641025641025,
+      "delta": 0.3717948717948718
+    },
+    {
+      "db_id": "wta_1",
+      "n": 62,
+      "base_zero_shot": 0.2903225806451613,
+      "base_few_shot": 0.41935483870967744,
+      "lora_zero_shot": 0.6129032258064516,
+      "delta": 0.3225806451612903
+    },
+    {
+      "db_id": "tvshow",
+      "n": 62,
+      "base_zero_shot": 0.4032258064516129,
+      "base_few_shot": 0.41935483870967744,
+      "lora_zero_shot": 0.6290322580645161,
+      "delta": 0.22580645161290322
+    },
+    {
+      "db_id": "network_1",
+      "n": 56,
+      "base_zero_shot": 0.44642857142857145,
+      "base_few_shot": 0.4642857142857143,
+      "lora_zero_shot": 0.6428571428571429,
+      "delta": 0.19642857142857142
+    },
+    {
+      "db_id": "museum_visit",
+      "n": 18,
+      "base_zero_shot": 0.3888888888888889,
+      "base_few_shot": 0.2777777777777778,
+      "lora_zero_shot": 0.7222222222222222,
+      "delta": 0.3333333333333333
+    },
+    {
+      "db_id": "cre_Doc_Template_Mgt",
+      "n": 84,
+      "base_zero_shot": 0.5952380952380952,
+      "base_few_shot": 0.6309523809523809,
+      "lora_zero_shot": 0.75,
+      "delta": 0.15476190476190477
+    },
+    {
+      "db_id": "battle_death",
+      "n": 16,
+      "base_zero_shot": 0.375,
+      "base_few_shot": 0.4375,
+      "lora_zero_shot": 0.75,
+      "delta": 0.375
+    },
+    {
+      "db_id": "concert_singer",
+      "n": 45,
+      "base_zero_shot": 0.5555555555555556,
+      "base_few_shot": 0.37777777777777777,
+      "lora_zero_shot": 0.7777777777777778,
+      "delta": 0.2222222222222222
+    },
+    {
+      "db_id": "voter_1",
+      "n": 15,
+      "base_zero_shot": 0.26666666666666666,
+      "base_few_shot": 0.6666666666666666,
+      "lora_zero_shot": 0.8,
+      "delta": 0.5333333333333333
+    },
+    {
+      "db_id": "flight_2",
+      "n": 80,
+      "base_zero_shot": 0.6875,
+      "base_few_shot": 0.6375,
+      "lora_zero_shot": 0.825,
+      "delta": 0.1375
+    },
+    {
+      "db_id": "poker_player",
+      "n": 40,
+      "base_zero_shot": 0.625,
+      "base_few_shot": 0.45,
+      "lora_zero_shot": 0.825,
+      "delta": 0.2
+    },
+    {
+      "db_id": "course_teach",
+      "n": 30,
+      "base_zero_shot": 0.5333333333333333,
+      "base_few_shot": 0.5,
+      "lora_zero_shot": 0.8666666666666667,
+      "delta": 0.3333333333333333
+    },
+    {
+      "db_id": "singer",
+      "n": 30,
+      "base_zero_shot": 0.7666666666666667,
+      "base_few_shot": 0.7666666666666667,
+      "lora_zero_shot": 0.9,
+      "delta": 0.13333333333333333
+    },
+    {
+      "db_id": "employee_hire_evaluation",
+      "n": 38,
+      "base_zero_shot": 0.5789473684210527,
+      "base_few_shot": 0.6842105263157895,
+      "lora_zero_shot": 0.9210526315789473,
+      "delta": 0.34210526315789475
+    },
+    {
+      "db_id": "orchestra",
+      "n": 40,
+      "base_zero_shot": 0.475,
+      "base_few_shot": 0.475,
+      "lora_zero_shot": 0.925,
+      "delta": 0.45
+    }
+  ],
+  "efficiency": {
+    "adapter_bytes": 85342487,
+    "adapter_mb": 85.342487,
+    "trainable_params": 18464768,
+    "wall_clock_seconds": 15221.748924261,
+    "wall_clock_hours": 4.2282635900725,
+    "gpu": "Tesla T4",
+    "n_train": 6282,
+    "examples_per_second": 1.2380968897708284
+  },
+  "source_metrics": "D:\\Projects\\text2sql-lora-sft\\artifacts\\metrics.json"
+}

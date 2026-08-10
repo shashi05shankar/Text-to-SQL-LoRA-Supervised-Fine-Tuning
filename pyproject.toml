@@ -21,6 +21,10 @@ dependencies = [
     "huggingface-hub>=0.23",
     # Chat templates are Jinja; `apply_chat_template` needs it even in tokenizer-only mode.
     "jinja2>=3.1",
+    # A real SQL parser for the structural metrics. Regexes cannot tell that `T1.name`,
+    # `singer.name` and `name` may be the same column, or that a double-quoted token is a
+    # SQLite string literal rather than an identifier.
+    "sqlglot>=25.0",
 ]
 
 [project.optional-dependencies]

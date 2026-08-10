@@ -182,6 +182,146 @@ def render(metrics: dict) -> str:
     return "\n".join(lines)
 
 
+def render_analysis(analysis: dict) -> str:
+    """The deep-evaluation tables, from `scripts/analyze.py`."""
+    if not analysis:
+        return ""
+
+    lines: list[str] = ["", "---", "", "### Is the difference real?", ""]
+
+    lines += [
+        "Wilson 95% intervals on each system, and **paired** tests on the difference. "
+        "Paired because all three systems answer the same 1,034 questions — an unpaired "
+        "test would discard that structure and be needlessly conservative.",
+        "",
+        "| System | Execution accuracy | 95% CI |",
+        "| --- | --- | --- |",
+    ]
+    for name in SYSTEM_ORDER:
+        entry = analysis["accuracy"].get(name)
+        if not entry:
+            continue
+        lines.append(
+            f"| {SYSTEM_LABELS.get(name, name)} | {entry['accuracy']:.4f} | "
+            f"[{entry['ci_low']:.4f}, {entry['ci_high']:.4f}] |"
+        )
+
+    lines += [
+        "",
+        "| Comparison | Fixed | Broke | McNemar p | Bootstrap 95% CI on the gain | Verdict |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for comparison in analysis["comparisons"].values():
+        mc = comparison["mcnemar"]
+        bs = comparison.get("bootstrap", {})
+        label = (
+            f"{SYSTEM_LABELS.get(comparison['candidate'], comparison['candidate'])} vs "
+            f"{SYSTEM_LABELS.get(comparison['baseline'], comparison['baseline'])}"
+        ).replace("**", "")
+        verdict = "**significant**" if mc["significant_at_05"] else "not significant"
+        lines.append(
+            f"| {label} | {mc['gained']} | {mc['lost']} | {mc['p_value']:.3g} | "
+            f"[{bs.get('ci_low', float('nan')):+.4f}, {bs.get('ci_high', float('nan')):+.4f}] | "
+            f"{verdict} |"
+        )
+
+    lines += [
+        "",
+        "The fine-tuning gain is far outside anything sampling noise produces. The "
+        "few-shot baseline is **statistically indistinguishable** from zero-shot — its "
+        "bootstrap interval straddles zero and McNemar cannot reject a coin flip. Three "
+        "in-context examples did not make the base model better at this task.",
+        "",
+        "### How each system fails",
+        "",
+        "Every prediction re-executed against the real database and classified. "
+        "*Invalid* means the query did not run — a grammar or schema-grounding failure. "
+        "*Semantic* means it ran and returned the wrong rows — the model understood SQL "
+        "and misread the question.",
+        "",
+        "| System | Correct | Invalid (didn't run) | Semantic (ran, wrong) | "
+        "Semantic share of errors |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for name in SYSTEM_ORDER:
+        f = analysis["failures"].get(name)
+        if not f:
+            continue
+        lines.append(
+            f"| {SYSTEM_LABELS.get(name, name)} | {f['n_correct'] / f['n']:.4f} | "
+            f"{f['invalid_rate']:.4f} | {f['semantic_error_rate']:.4f} | "
+            f"{f['semantic_share_of_errors']:.4f} |"
+        )
+
+    lines += [
+        "",
+        "The last column is the one to watch: of the questions a system gets wrong, what "
+        "fraction at least *executed*. It rises across the fine-tune, meaning errors "
+        "migrated from \"cannot write valid SQL against this schema\" to \"wrote valid "
+        "SQL, misread the question\" — a harder and more interesting remaining problem.",
+        "",
+        "Most common failure modes:",
+        "",
+        "| Failure | Base zero-shot | LoRA fine-tuned |",
+        "| --- | --- | --- |",
+    ]
+    base_kinds = analysis["failures"]["base_zero_shot"]["by_kind"]
+    lora_kinds = analysis["failures"]["lora_zero_shot"]["by_kind"]
+    interesting = [k for k in base_kinds if k != "correct"][:6]
+    for kind in interesting:
+        base_rate = base_kinds.get(kind, {}).get("rate", 0.0)
+        lora_rate = lora_kinds.get(kind, {}).get("rate", 0.0)
+        lines.append(f"| {kind} | {base_rate:.4f} | {lora_rate:.4f} |")
+
+    lines += [
+        "",
+        "### What it got structurally right",
+        "",
+        "Execution accuracy is all-or-nothing: a query with the right joins, filter and "
+        "grouping but the wrong aggregate scores exactly the same as gibberish. These "
+        "metrics parse both queries into an AST (`sqlglot`) and award partial credit.",
+        "",
+        "**Schema grounding** — do the tables and columns named actually exist in that "
+        "database? **Component matching** — does the query have gold's shape: same "
+        "clauses, same join count, same aggregates? (A simplified reimplementation of "
+        "the partial-credit metrics the Spider literature reports, not the official "
+        "evaluator.)",
+        "",
+        "| System | Parses | Fully grounded | Clause F1 | Join count | Aggregate | Exact shape |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for name in SYSTEM_ORDER:
+        g = analysis["grounding"].get(name, {})
+        c = analysis["components"].get(name, {})
+        if not g or not c:
+            continue
+        lines.append(
+            f"| {SYSTEM_LABELS.get(name, name)} | {g['parse_rate']:.4f} | "
+            f"{g['grounded_rate']:.4f} | {c['clause_f1']:.4f} | "
+            f"{c['join_count_match_rate']:.4f} | {c['aggregate_match_rate']:.4f} | "
+            f"{c['exact_shape_match_rate']:.4f} |"
+        )
+
+    efficiency = analysis.get("efficiency", {})
+    if efficiency:
+        lines += [
+            "",
+            "### Cost",
+            "",
+            "| | |",
+            "| --- | --- |",
+            f"| Adapter shipped | **{efficiency.get('adapter_mb', 0):.0f} MB** "
+            "(vs ~3 GB for a full fine-tune checkpoint) |",
+            f"| Trainable parameters | {efficiency.get('trainable_params', 0):,} |",
+            f"| Hardware | {efficiency.get('gpu', '?')} (free tier) |",
+            f"| Wall clock | {efficiency.get('wall_clock_hours', 0):.1f} h |",
+            f"| Throughput | {efficiency.get('examples_per_second') or 0:.2f} examples/s |",
+        ]
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 def splice(readme: str, block: str) -> str:
     if BEGIN not in readme or END not in readme:
         raise SystemExit(f"README is missing the {BEGIN!r} / {END!r} markers")
@@ -206,7 +346,17 @@ def main() -> int:
         return 1
 
     metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
-    block = render(metrics)
+
+    # The deep analysis is optional: `metrics.json` alone is enough to report the
+    # headline. If `scripts/analyze.py` has been run, its tables are appended.
+    analysis_path = paths.artifacts_dir / "analysis.json"
+    analysis = (
+        json.loads(analysis_path.read_text(encoding="utf-8"))
+        if analysis_path.exists()
+        else {}
+    )
+
+    block = render(metrics) + render_analysis(analysis)
 
     target = args.check or args.readme
     readme = target.read_text(encoding="utf-8")

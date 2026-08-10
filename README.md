@@ -65,6 +65,71 @@ Base `Qwen/Qwen2.5-1.5B-Instruct`, LoRA r=16 alpha=32, seq 1024, seed 42.
 That is **1.20% of the base model's 1,543,714,304 parameters**. The run's own manifest records 907,081,216 total params and 2.04%, but that count is taken over the *4-bit* model: bitsandbytes packs two weights per byte, so summing `numel()` returns about half the true parameter count and correspondingly overstates LoRA's share. The larger, more flattering figure is not the one quoted here.
 
 Trained on 6,282 examples (monitoring split 718, database-disjoint), evaluated on 1,034. Wall clock 253.7 min.
+
+---
+
+### Is the difference real?
+
+Wilson 95% intervals on each system, and **paired** tests on the difference. Paired because all three systems answer the same 1,034 questions — an unpaired test would discard that structure and be needlessly conservative.
+
+| System | Execution accuracy | 95% CI |
+| --- | --- | --- |
+| Base, zero-shot | 0.4101 | [0.3805, 0.4403] |
+| Base, 3-shot | 0.4120 | [0.3824, 0.4423] |
+| **LoRA fine-tuned** | 0.6547 | [0.6252, 0.6831] |
+
+| Comparison | Fixed | Broke | McNemar p | Bootstrap 95% CI on the gain | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| LoRA fine-tuned vs Base, zero-shot | 308 | 55 | 6.16e-40 | [+0.2118, +0.2785] | **significant** |
+| LoRA fine-tuned vs Base, 3-shot | 306 | 55 | 1.53e-39 | [+0.2099, +0.2756] | **significant** |
+| Base, 3-shot vs Base, zero-shot | 134 | 132 | 0.951 | [-0.0290, +0.0338] | not significant |
+
+The fine-tuning gain is far outside anything sampling noise produces. The few-shot baseline is **statistically indistinguishable** from zero-shot — its bootstrap interval straddles zero and McNemar cannot reject a coin flip. Three in-context examples did not make the base model better at this task.
+
+### How each system fails
+
+Every prediction re-executed against the real database and classified. *Invalid* means the query did not run — a grammar or schema-grounding failure. *Semantic* means it ran and returned the wrong rows — the model understood SQL and misread the question.
+
+| System | Correct | Invalid (didn't run) | Semantic (ran, wrong) | Semantic share of errors |
+| --- | --- | --- | --- | --- |
+| Base, zero-shot | 0.4101 | 0.3250 | 0.2650 | 0.4492 |
+| Base, 3-shot | 0.4120 | 0.3182 | 0.2698 | 0.4589 |
+| **LoRA fine-tuned** | 0.6547 | 0.1499 | 0.1954 | 0.5658 |
+
+The last column is the one to watch: of the questions a system gets wrong, what fraction at least *executed*. It rises across the fine-tune, meaning errors migrated from "cannot write valid SQL against this schema" to "wrote valid SQL, misread the question" — a harder and more interesting remaining problem.
+
+Most common failure modes:
+
+| Failure | Base zero-shot | LoRA fine-tuned |
+| --- | --- | --- |
+| invalid: no such column | 0.2485 | 0.1364 |
+| wrong: same shape, different values | 0.0928 | 0.0812 |
+| wrong: wrong number of rows | 0.0822 | 0.0532 |
+| wrong: returned no rows | 0.0629 | 0.0348 |
+| invalid: no such table | 0.0435 | 0.0097 |
+| wrong: wrong number of columns | 0.0184 | 0.0135 |
+
+### What it got structurally right
+
+Execution accuracy is all-or-nothing: a query with the right joins, filter and grouping but the wrong aggregate scores exactly the same as gibberish. These metrics parse both queries into an AST (`sqlglot`) and award partial credit.
+
+**Schema grounding** — do the tables and columns named actually exist in that database? **Component matching** — does the query have gold's shape: same clauses, same join count, same aggregates? (A simplified reimplementation of the partial-credit metrics the Spider literature reports, not the official evaluator.)
+
+| System | Parses | Fully grounded | Clause F1 | Join count | Aggregate | Exact shape |
+| --- | --- | --- | --- | --- | --- | --- |
+| Base, zero-shot | 0.9942 | 0.7311 | 0.6986 | 0.5619 | 0.8723 | 0.3066 |
+| Base, 3-shot | 0.9952 | 0.7843 | 0.7579 | 0.6170 | 0.8578 | 0.3656 |
+| **LoRA fine-tuned** | 1.0000 | 0.8849 | 0.9164 | 0.8182 | 0.9381 | 0.7166 |
+
+### Cost
+
+| | |
+| --- | --- |
+| Adapter shipped | **85 MB** (vs ~3 GB for a full fine-tune checkpoint) |
+| Trainable parameters | 18,464,768 |
+| Hardware | Tesla T4 (free tier) |
+| Wall clock | 4.2 h |
+| Throughput | 1.24 examples/s |
 <!-- END RESULTS -->
 
 ---
@@ -89,11 +154,28 @@ broad, not one easy database carrying the average. Biggest:
 (nesting, set operations, 2+ joins) accuracy more than doubled, 22.3% → 46.6%. A gain
 concentrated in `easy` would have been much less interesting.
 
-**Few-shot prompting bought almost nothing: 41.0% → 41.2%.** Three in-context examples
-moved execution accuracy by 0.2 points — while raising exact match from 11.0% to 17.2%.
-So the demonstrations taught the base model Spider's *output style* without teaching it to
-write more correct queries. This is the single most useful number for defending the
-project: the improvement is not something a better prompt would have achieved.
+**Few-shot prompting bought nothing measurable: 41.0% → 41.2%.** Three in-context
+examples moved execution accuracy by 0.2 points — well inside noise, and the paired tests
+say so explicitly (McNemar p=0.95, bootstrap CI [-0.029, +0.034] straddling zero). It did
+raise exact match from 11.0% to 17.2%, so the demonstrations taught the base model
+Spider's *output style* without teaching it to write more correct queries. This is the
+single most useful result for defending the project: the improvement is demonstrably not
+something a better prompt would have achieved.
+
+**The gain is structural, and it is measurable separately from the accuracy number.**
+Parsing both gold and prediction into an AST shows *what* changed:
+
+| | Base | Tuned |
+| --- | --- | --- |
+| Predictions that parse as SQL at all | 99.4% | **100.0%** |
+| Names only real tables and columns | 73.1% | **88.5%** |
+| Gets the join count right | 56.2% | **81.8%** |
+| Matches gold's clause structure (F1) | 0.699 | **0.916** |
+
+The largest single jump is join count — 56% → 82%. That is the base model's signature
+failure (inventing a JOIN nobody asked for, as in the worked example above) being trained
+out. Schema grounding improved by 15 points but is still the weakest column at 88.5%,
+which is precisely why serializing example column values is the top item in future work.
 
 ### One question, end to end
 
@@ -133,6 +215,16 @@ roughly one epoch. Whether that checkpoint would have scored *better* on executi
 accuracy is untested — checkpoints were not kept, which is a genuine limitation of this
 run.
 
+**A measurement bug that changed a conclusion.** The first version of the grounding
+metric reported that fine-tuning had made schema grounding slightly *worse* (73.1% →
+72.0%). It hadn't. Spider's gold SQL writes string literals in double quotes
+(`WHERE pettype = "cat"`), which is an *identifier* in standard SQL — SQLite only treats
+it as a string via a documented fallback. The tuned model had faithfully learned that
+convention, and the AST parser was handing those literals back as column references, so
+`cat`, `dog` and `ben jones` were being counted as invented columns. Correcting it moved
+the real figure to **88.5%**. Recorded here because the lesson generalises: a metric that
+contradicts every other signal usually deserves suspicion before the model does.
+
 **The regressions have a pattern, and it is Spider-shaped.** Of the 55 questions
 fine-tuning broke, most fail because the model adopted Spider's *stylistic* conventions
 too literally — lowercase identifiers, `T1`/`T2` aliases — and then invented column names
@@ -152,8 +244,9 @@ Every row is a real run on the real corpus, reproducible with the command shown.
 | Prompt length, all 7,000 train examples | mean 400.5 tok, p90 687, p99 2095; 2.34% truncate at 1024 | `python scripts/measure_lengths.py` |
 | Full training pipeline, toy model on CPU | runs end to end, artifacts well-formed | `python scripts/smoke_local.py` |
 | **The headline run** | **41.0% → 65.5% execution accuracy**, 4.2 h on one T4 | `notebooks/kaggle_lora_sft.ipynb` |
+| Deep analysis (significance, failures, structure) | McNemar p≈6e-40; grounding 73.1%→88.5% | `python scripts/analyze.py` |
 | README matches the artifact | no number here drifts from `metrics.json` | `python scripts/report.py --check README.md` |
-| Test suite | 151 passing, CPU-only, no model download | `pytest` |
+| Test suite | 242 passing, CPU-only, no model download | `pytest` |
 
 The gold-vs-gold check is the one that matters most. It scores Spider's own gold queries
 *as if they were predictions*: a harness that cannot score a known-perfect system at 100%
@@ -177,6 +270,15 @@ before spending a GPU session on it:
 ```bash
 pip install -e ".[train]"
 python scripts/smoke_local.py
+```
+
+Re-derive every number in this README from the run's artifacts (CPU, a few minutes — it
+re-executes all 3,102 predictions against the real databases):
+
+```bash
+python scripts/analyze.py
+python scripts/report.py
+python scripts/report.py --check README.md
 ```
 
 Serve it (after the training run has been ingested — see `docs/kaggle_run.md`):
