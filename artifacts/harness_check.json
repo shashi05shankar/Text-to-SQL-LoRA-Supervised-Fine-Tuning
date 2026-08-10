@@ -1,0 +1,13 @@
+{
+  "split": "validation",
+  "summary": {
+    "system": "gold_self_consistency",
+    "n": 1034,
+    "execution_accuracy": 1.0,
+    "exact_match": 1.0,
+    "invalid_sql_rate": 0.0
+  },
+  "n_unexecutable_gold": 0,
+  "n_scoring_failures": 0,
+  "failures": []
+}

@@ -1,0 +1,37 @@
+# Downloaded data. Spider is ~210 MB of SQLite databases; it is fetched, not committed.
+# Leading slash anchors this to the repo root -- an unanchored `data/` would also match
+# src/text2sql_lora/data/ and tests/data/ and silently drop them from the commit.
+/data/
+
+# Fitted artifacts arrive from the Kaggle run. The LoRA adapter and predictions are
+# large-ish binaries/JSONL; metrics.json is small and IS committed (see below).
+artifacts/adapter/
+artifacts/predictions.jsonl
+artifacts/*.png
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Notebook noise
+.ipynb_checkpoints/
