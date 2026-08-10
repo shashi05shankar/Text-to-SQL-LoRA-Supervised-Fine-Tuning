@@ -90,9 +90,11 @@ def metrics() -> dict:
             "n_dev": 1034,
             "max_seq_len": 1024,
             "wall_clock_seconds": 7200.0,
+            # As a real 4-bit run reports them: `total_params` sums numel() over the
+            # quantized model, so it is roughly HALF the true parameter count.
             "trainable_params": 18_464_768,
-            "total_params": 1_562_179_072,
-            "trainable_percent": 1.182,
+            "total_params": 907_081_216,
+            "trainable_percent": 2.036,
             "lora": {"r": 16, "alpha": 32},
         },
     }
@@ -126,9 +128,34 @@ def test_provenance_reports_measured_parameter_counts(report, metrics):
     block = report.render(metrics)
 
     assert "18,464,768 trainable parameters" in block
-    assert "1.182%" in block
     assert "the base weights never moved" in block
     assert "Tesla T4" in block
+
+
+def test_lora_share_is_quoted_against_true_params_not_packed_ones(report, metrics):
+    """A 4-bit model reports about half its real parameter count, so dividing by it
+    overstates LoRA's share (2.04% instead of 1.20%). The README must quote the smaller,
+    less flattering, correct figure -- and say why."""
+    block = report.render(metrics)
+
+    assert "1.20% of the base model's 1,543,714,304 parameters" in block
+    assert "2.04%" in block  # the packed figure is disclosed...
+    assert "not the one quoted here" in block  # ...and explicitly disowned
+    assert "packs two weights per byte" in block
+
+
+def test_unknown_base_model_still_explains_the_packed_count(report, metrics):
+    """No hardcoded true-parameter count for this model: the note must degrade to the
+    explanation rather than inventing a number."""
+    metrics["manifest"]["base_model"] = "some/unknown-model"
+    note = report.trainable_share_note(metrics["manifest"])
+
+    assert "1,543,714,304" not in note
+    assert "packs two weights per byte" in note
+
+
+def test_share_note_is_empty_without_counts(report):
+    assert report.trainable_share_note({}) == ""
 
 
 def test_unexecutable_gold_is_disclosed_when_present(report, metrics):

@@ -31,6 +31,48 @@ SYSTEM_LABELS = {
 SYSTEM_ORDER = ["base_zero_shot", "base_few_shot", "lora_zero_shot"]
 
 
+# True (unquantized) parameter counts, derived from each model's published config:
+# vocab*hidden embeddings + layers * (attention + MLP + norms). Needed because
+# `total_params` in the manifest is NOT the model's parameter count -- see below.
+TRUE_PARAM_COUNTS = {
+    "Qwen/Qwen2.5-1.5B-Instruct": 1_543_714_304,
+}
+
+
+def trainable_share_note(manifest: dict) -> str:
+    """Explain what fraction of the model LoRA actually trains.
+
+    The manifest's `total_params` comes from summing `p.numel()` over a **4-bit** model,
+    and bitsandbytes packs two 4-bit weights into each uint8 element. So the number the
+    model reports (907M for Qwen2.5-1.5B) is roughly half the real parameter count, and
+    naively dividing by it overstates LoRA's share -- 2.04% instead of 1.20%.
+
+    Reporting the flattering number would be exactly the kind of thing this project is
+    built to avoid, so both are given, with the reason.
+    """
+    trainable = manifest.get("trainable_params", 0)
+    packed = manifest.get("total_params", 0)
+    base_model = manifest.get("base_model", "")
+    true_total = TRUE_PARAM_COUNTS.get(base_model)
+
+    if not (trainable and packed):
+        return ""
+
+    note = (
+        f"That is **{100 * trainable / true_total:.2f}% of the base model's "
+        f"{true_total:,} parameters**."
+        if true_total
+        else ""
+    )
+    return (
+        f"{note} The run's own manifest records {packed:,} total params and "
+        f"{100 * trainable / packed:.2f}%, but that count is taken over the *4-bit* "
+        "model: bitsandbytes packs two weights per byte, so summing `numel()` returns "
+        "about half the true parameter count and correspondingly overstates LoRA's "
+        "share. The larger, more flattering figure is not the one quoted here."
+    ).strip()
+
+
 def render(metrics: dict) -> str:
     results = metrics["results"]
     manifest = metrics.get("manifest", {})
@@ -119,9 +161,10 @@ def render(metrics: dict) -> str:
             f"LoRA r={lora.get('r', '?')} alpha={lora.get('alpha', '?')}, "
             f"seq {manifest.get('max_seq_len', '?')}, seed {manifest.get('seed', '?')}.",
             "",
-            f"**{manifest.get('trainable_params', 0):,} trainable parameters of "
-            f"{manifest.get('total_params', 0):,}** "
-            f"({manifest.get('trainable_percent', 0):.3f}%) — the base weights never moved.",
+            f"**{manifest.get('trainable_params', 0):,} trainable parameters** — the base "
+            "weights never moved.",
+            "",
+            trainable_share_note(manifest),
             "",
             f"Trained on {manifest.get('n_train', '?'):,} examples "
             f"(monitoring split {manifest.get('n_val', '?'):,}, database-disjoint), "

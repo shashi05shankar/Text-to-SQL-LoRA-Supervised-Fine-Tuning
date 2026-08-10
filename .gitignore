@@ -9,6 +9,10 @@ artifacts/adapter/
 artifacts/predictions.jsonl
 artifacts/*.png
 
+# The downloaded Kaggle bundle itself. Its *contents* belong in artifacts/; the zip is
+# just the transport and is ~67 MB.
+artifacts*.zip
+
 # Python
 __pycache__/
 *.py[cod]
