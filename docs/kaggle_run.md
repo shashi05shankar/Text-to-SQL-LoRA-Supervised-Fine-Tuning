@@ -96,6 +96,23 @@ without quantization. Record that you did this, because it changes the manifest.
 **bf16 error.** Should not happen — the code selects fp16 on compute capability < 8.0 — but
 if you see it, confirm the GPU check cell reported `float16 (Turing: no bf16)`.
 
+**`ImportError: Found an incompatible version of torchao` inside `get_peft_model`.**
+Kaggle preinstalls torchao 0.10.0, and PEFT's LoRA dispatcher *raises* on a version below
+its minimum instead of skipping the optional backend. The install cell now uninstalls
+torchao (we don't use it) and prints `torchao available to peft: False`. If you hit this
+on an older clone, run this once, then re-run the training cell:
+
+```python
+import importlib, subprocess, sys
+subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "torchao"], check=False)
+importlib.invalidate_caches()
+for m in [m for m in sys.modules if m == "torchao" or m.startswith("torchao.")]:
+    del sys.modules[m]
+import peft.import_utils as iu
+iu.is_torchao_available.cache_clear()
+print("torchao available to peft:", iu.is_torchao_available())  # must be False
+```
+
 **Session died mid-run.** Nothing is salvageable before the adapter is saved; rerun. The
 smoke checkpoint exists specifically so that a rerun costs minutes of diagnosis, not hours.
 
