@@ -126,6 +126,19 @@ def build_training_arguments(
     use_cuda = device == "cuda" and torch.cuda.is_available()
     dtype = resolve_dtype(device)
 
+    # Paged 8-bit Adam keeps optimizer state off the critical VRAM path and is the
+    # standard QLoRA choice -- but it needs bitsandbytes, and a broken bnb install would
+    # otherwise take the run down *after* the model has loaded. Degrade to plain AdamW
+    # instead: on a 16 GB T4 with a 1.5B 4-bit base there is ample headroom for it.
+    optimizer = "adamw_torch"
+    if use_cuda:
+        try:
+            import bitsandbytes  # noqa: F401
+
+            optimizer = "paged_adamw_8bit"
+        except Exception as exc:
+            print(f"bitsandbytes unavailable ({exc}); using adamw_torch")
+
     return TrainingArguments(
         output_dir=str(output_dir),
         num_train_epochs=config.epochs,
@@ -143,7 +156,7 @@ def build_training_arguments(
         # T4 is Turing: fp16 only. bf16 needs compute capability 8.0+.
         fp16=use_cuda and dtype is torch.float16,
         bf16=use_cuda and dtype is torch.bfloat16,
-        optim="paged_adamw_8bit" if use_cuda else "adamw_torch",
+        optim=optimizer,
         logging_steps=config.logging_steps,
         eval_strategy="steps",
         eval_steps=config.eval_steps,

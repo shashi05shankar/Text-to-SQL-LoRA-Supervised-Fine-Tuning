@@ -28,6 +28,23 @@ class Paths:
         default_factory=lambda: _env_path("T2S_ARTIFACTS_DIR", REPO_ROOT / "artifacts")
     )
 
+    def __post_init__(self) -> None:
+        """Accept strings as well as `Path`s.
+
+        `Paths(artifacts_dir="/kaggle/working/smoke")` is the natural thing to write, and
+        a dataclass will happily store the `str` -- the annotation is not enforced. The
+        failure then surfaces much later and far away, as
+        `TypeError: unsupported operand type(s) for /: 'str' and 'str'` inside a training
+        call, which says nothing about where the bad value came from. Coerce at the
+        boundary instead.
+
+        `object.__setattr__` because the dataclass is frozen.
+        """
+        for name in ("data_dir", "artifacts_dir"):
+            value = getattr(self, name)
+            if not isinstance(value, Path):
+                object.__setattr__(self, name, Path(value))
+
     # --- data ---------------------------------------------------------------
     def spider_dir(self) -> Path:
         """Root of the unpacked `spider_data.zip` (holds `database/` and `tables.json`)."""
@@ -126,7 +143,11 @@ class TrainConfig:
     gradient_accumulation_steps: int = 8  # effective batch 16
     max_grad_norm: float = 1.0
     logging_steps: int = 10
-    eval_steps: int = 100
+    # 6,282 training examples at an effective batch of 16 is ~1,178 steps over 3 epochs.
+    # At eval_steps=100 that is ~11 passes over the 718-example validation split, which on
+    # a T4 costs more wall clock than it buys: the curve only needs enough points to show
+    # the shape. 200 gives ~6.
+    eval_steps: int = 200
     gradient_checkpointing: bool = True
 
     # 4-bit NF4 quantization of the frozen base weights (QLoRA).
