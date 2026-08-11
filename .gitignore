@@ -5,8 +5,11 @@
 
 # Fitted artifacts arrive from the Kaggle run. The LoRA adapter and predictions are
 # large-ish binaries/JSONL; metrics.json is small and IS committed (see below).
-artifacts/adapter/
-artifacts/predictions.jsonl
+# Unanchored so they match every experiment arm too (artifacts/experiments/<arm>/adapter/,
+# .../predictions.jsonl), not only the top-level run.
+adapter/
+predictions.jsonl
+artifacts/**/*.png
 artifacts/*.png
 
 # The downloaded Kaggle bundle itself. Its *contents* belong in artifacts/; the zip is

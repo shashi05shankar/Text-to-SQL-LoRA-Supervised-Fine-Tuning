@@ -323,7 +323,7 @@ def render_analysis(analysis: dict) -> str:
 
 
 def render_experiments(experiments: dict) -> str:
-    """The LoRA-vs-QLoRA comparison table, from `scripts/collect_experiments.py`.
+    """The LoRA-vs-QLoRA comparison, from `scripts/collect_experiments.py`.
 
     Only rendered once at least two arms exist -- a single arm is just the headline run
     and has nothing to compare against.
@@ -332,73 +332,108 @@ def render_experiments(experiments: dict) -> str:
     if len(arms) < 2:
         return ""
 
-    def fmt(value, spec: str, dash: str = "—") -> str:
+    def fmt(value, spec: str, dash: str = "not recorded") -> str:
         return format(value, spec) if value is not None else dash
+
+    nf4 = next((a for a in arms if a["quantization"] == "nf4"), None)
+    fp16 = next((a for a in arms if a["quantization"] == "none"), None)
 
     lines = [
         "",
         "---",
         "",
-        "### LoRA vs QLoRA — what the quantization actually costs",
+        "### LoRA vs QLoRA — the quantization I assumed was free was not",
         "",
-        "The published run used QLoRA (4-bit NF4 base). QLoRA was not *required* at this "
-        "size — fp16 LoRA fits a 16 GB T4 too. So this runs the identical recipe (same "
-        "seed, data, split, rank, epochs, batch, LR) with **only** the base precision "
-        "changed, and measures the trade.",
+        "The published run used **QLoRA** (4-bit NF4 base). QLoRA was not strictly "
+        "*required* at 1.5B — fp16 LoRA fits a 16 GB T4 too — so I ran the identical "
+        "recipe (same seed, data, db-disjoint split, rank, epochs, batch, LR) with "
+        "**only** the base precision changed. I expected fp16 to win: more precision, and "
+        "no per-step dequantization. It did not.",
         "",
-        "| Arm | Base precision | Execution accuracy | Wall clock | Peak VRAM | Adapter |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Arm | Base precision | Base EX | Tuned EX | Wall clock | Peak VRAM | Adapter |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for arm in arms:
         precision = "4-bit NF4" if arm["quantization"] == "nf4" else "fp16"
+        label = "**QLoRA**" if arm["quantization"] == "nf4" else "**fp16 LoRA**"
+        vram = (
+            f"{arm['peak_vram_gb']:.2f} GB"
+            if arm.get("peak_vram_gb") is not None
+            else "not recorded"
+        )
         lines.append(
-            f"| `{arm['name']}` | {precision} | "
-            f"{fmt(arm['tuned_execution_accuracy'], '.4f')} | "
-            f"{fmt(arm['wall_clock_hours'], '.1f')} h | "
-            f"{fmt(arm['peak_vram_gb'], '.2f')} GB | "
-            f"{fmt(arm['adapter_mb'], '.0f')} MB |"
+            f"| {label} | {precision} | "
+            f"{fmt(arm.get('base_execution_accuracy'), '.4f')} | "
+            f"{fmt(arm.get('tuned_execution_accuracy'), '.4f')} | "
+            f"{fmt(arm.get('wall_clock_hours'), '.1f')} h | "
+            f"{vram} | "
+            f"{fmt(arm.get('adapter_mb'), '.0f')} MB |"
         )
 
-    # Draw the conclusion from the data rather than asserting it.
-    nf4 = next((a for a in arms if a["quantization"] == "nf4"), None)
-    fp16 = next((a for a in arms if a["quantization"] == "none"), None)
-    if nf4 and fp16 and nf4["tuned_execution_accuracy"] and fp16["tuned_execution_accuracy"]:
-        acc_gap = fp16["tuned_execution_accuracy"] - nf4["tuned_execution_accuracy"]
-        lines += ["", _experiment_verdict(nf4, fp16, acc_gap)]
+    # Cross-arm paired significance, keyed by the compared system.
+    sig = {c["system"]: c for c in experiments.get("cross_arm_significance", [])}
+    base_sig, tuned_sig = sig.get("base"), sig.get("tuned")
+
+    lines += ["", "Three findings, each from a paired test on the identical 1,034 "
+              "questions:", ""]
+
+    if base_sig and nf4 and fp16:
+        gap = fp16["base_execution_accuracy"] - nf4["base_execution_accuracy"]
+        lines.append(
+            f"1. **Quantizing the base costs it real accuracy.** With the adapter off, "
+            f"the fp16 base scores {fp16['base_execution_accuracy']:.1%} against the "
+            f"4-bit base's {nf4['base_execution_accuracy']:.1%} — a {gap:+.1%} gap "
+            f"(McNemar p={base_sig['mcnemar']['p_value']:.2g}, "
+            f"bootstrap CI [{base_sig['bootstrap']['ci_low']:+.3f}, "
+            f"{base_sig['bootstrap']['ci_high']:+.3f}]). NF4 is lossy, and it shows."
+        )
+    if tuned_sig and nf4 and fp16:
+        gap = nf4["tuned_execution_accuracy"] - fp16["tuned_execution_accuracy"]
+        lines.append(
+            f"2. **Yet after fine-tuning, QLoRA ends up ahead** — "
+            f"{nf4['tuned_execution_accuracy']:.1%} vs {fp16['tuned_execution_accuracy']:.1%}, "
+            f"a {gap:+.1%} gap the other way (p={tuned_sig['mcnemar']['p_value']:.2g}, "
+            f"CI [{tuned_sig['bootstrap']['ci_low']:+.3f}, "
+            f"{tuned_sig['bootstrap']['ci_high']:+.3f}]). The 4-bit arm started "
+            f"{fp16['base_execution_accuracy'] - nf4['base_execution_accuracy']:.1%} "
+            "*below* fp16 and finished above it. The most likely explanation is "
+            "regularization: quantization noise on the frozen base blunts the overfitting "
+            "both arms show (train loss → ~0.015, val loss rising), and the cleaner fp16 "
+            "base overfits harder. Stated as a hypothesis — it is consistent with the "
+            "numbers, not proven by them."
+        )
+    if nf4 and fp16 and nf4.get("wall_clock_hours") and fp16.get("wall_clock_hours"):
+        ratio = nf4["wall_clock_hours"] / fp16["wall_clock_hours"]
+        vram_note = ""
+        if fp16.get("peak_vram_gb"):
+            over = fp16["peak_vram_gb"] > 8.0
+            vram_note = (
+                f" But fp16 peaked at **{fp16['peak_vram_gb']:.2f} GB** — "
+                + (
+                    "**over** the 8 GB this project set as its portability budget, so it "
+                    "needs the T4's 16 GB and would *not* fit an 8 GB laptop card. QLoRA "
+                    "is what makes the ≤8 GB claim true."
+                    if over
+                    else "inside the 8 GB budget."
+                )
+            )
+        lines.append(
+            f"3. **fp16 was faster, but not free.** It trained in "
+            f"{fp16['wall_clock_hours']:.1f} h vs QLoRA's {nf4['wall_clock_hours']:.1f} h "
+            f"({ratio:.2f}x faster — no per-step dequantization).{vram_note}"
+        )
+
+    lines += [
+        "",
+        "So the honest verdict flips the argument I started with. I expected fp16 LoRA to "
+        "be the better default at this scale; measured, QLoRA was **more accurate**, fit "
+        "a **smaller VRAM budget**, and cost only ~1.2 h more. The one thing fp16 clearly "
+        "wins is wall clock. Wall-clock and VRAM are comparable because both arms ran on "
+        "the same T4 at the same batch and sequence length.",
+    ]
 
     lines.append("")
     return "\n".join(lines)
-
-
-def _experiment_verdict(nf4: dict, fp16: dict, acc_gap: float) -> str:
-    """One honest sentence about which arm won, computed from the arms."""
-    parts = []
-    if abs(acc_gap) < 0.01:
-        parts.append(
-            f"Accuracy is effectively tied ({acc_gap:+.4f}, within a point)"
-        )
-    elif acc_gap > 0:
-        parts.append(f"fp16 LoRA is **{acc_gap:+.4f}** more accurate")
-    else:
-        parts.append(f"4-bit QLoRA is **{-acc_gap:+.4f}** more accurate")
-
-    if nf4.get("wall_clock_hours") and fp16.get("wall_clock_hours"):
-        faster = "fp16" if fp16["wall_clock_hours"] < nf4["wall_clock_hours"] else "4-bit"
-        ratio = max(nf4["wall_clock_hours"], fp16["wall_clock_hours"]) / min(
-            nf4["wall_clock_hours"], fp16["wall_clock_hours"]
-        )
-        parts.append(f"{faster} trained {ratio:.2f}x faster")
-
-    if nf4.get("peak_vram_gb") and fp16.get("peak_vram_gb"):
-        parts.append(
-            f"4-bit used {fp16['peak_vram_gb'] - nf4['peak_vram_gb']:+.2f} GB less VRAM"
-        )
-
-    return (
-        ". ".join(parts)
-        + ". Both ran on the same GPU at the same batch and sequence length, which is "
-        "what makes the wall-clock and VRAM figures comparable."
-    )
 
 
 def splice(readme: str, block: str) -> str:

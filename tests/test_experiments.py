@@ -124,72 +124,31 @@ def test_collector_reports_failure_when_no_runs_exist(collect, tmp_path, monkeyp
 # --- rendering ---------------------------------------------------------------
 
 
+# NOTE: rendering of the LoRA-vs-QLoRA section is tested in tests/test_report.py, against
+# a fixture shaped like the real collector output (base + tuned accuracy per arm, plus
+# cross-arm significance). This file covers the collector that *produces* that structure.
+
+
 def test_render_needs_at_least_two_arms(report):
     one_arm = {"arms": [{"name": "solo", "quantization": "nf4"}], "n_arms": 1}
     assert report.render_experiments(one_arm) == ""
     assert report.render_experiments({}) == ""
 
 
-def test_render_produces_a_comparison_table(report):
+def test_render_tolerates_a_partially_populated_arm(report):
+    """The published arm has no recorded VRAM; render must degrade, not crash."""
     experiments = {
         "arms": [
-            {"name": "qlora_nf4_published", "quantization": "nf4",
-             "tuned_execution_accuracy": 0.6547, "wall_clock_hours": 4.23,
-             "peak_vram_gb": 2.6, "adapter_mb": 85.0},
-            {"name": "lora_fp16", "quantization": "none",
-             "tuned_execution_accuracy": 0.658, "wall_clock_hours": 3.1,
-             "peak_vram_gb": 4.8, "adapter_mb": 85.0},
+            {"name": "a", "quantization": "nf4", "base_execution_accuracy": 0.41,
+             "tuned_execution_accuracy": 0.65, "wall_clock_hours": 4.2,
+             "peak_vram_gb": None, "adapter_mb": 85.0},
+            {"name": "b", "quantization": "none", "base_execution_accuracy": 0.48,
+             "tuned_execution_accuracy": 0.62, "wall_clock_hours": 3.0,
+             "peak_vram_gb": 8.13, "adapter_mb": 85.0},
         ],
         "n_arms": 2,
+        "cross_arm_significance": [],
     }
     block = report.render_experiments(experiments)
-
-    assert "LoRA vs QLoRA" in block
-    assert "4-bit NF4" in block and "fp16" in block
-    assert "0.6547" in block and "0.6580" in block
-    assert "2.60 GB" in block and "4.80 GB" in block
-
-
-def test_verdict_reports_fp16_faster_when_it_is(report):
-    experiments = {
-        "arms": [
-            {"name": "qlora", "quantization": "nf4", "tuned_execution_accuracy": 0.6547,
-             "wall_clock_hours": 4.23, "peak_vram_gb": 2.6, "adapter_mb": 85.0},
-            {"name": "lora", "quantization": "none", "tuned_execution_accuracy": 0.655,
-             "wall_clock_hours": 3.1, "peak_vram_gb": 4.8, "adapter_mb": 85.0},
-        ],
-        "n_arms": 2,
-    }
-    block = report.render_experiments(experiments)
-
-    assert "fp16 trained" in block and "faster" in block
-    assert "tied" in block.lower()  # 0.655 vs 0.6547 is within a point
-
-
-def test_verdict_reports_qlora_more_accurate_when_it_is(report):
-    experiments = {
-        "arms": [
-            {"name": "qlora", "quantization": "nf4", "tuned_execution_accuracy": 0.70,
-             "wall_clock_hours": 4.2, "peak_vram_gb": 2.6, "adapter_mb": 85.0},
-            {"name": "lora", "quantization": "none", "tuned_execution_accuracy": 0.60,
-             "wall_clock_hours": 3.1, "peak_vram_gb": 4.8, "adapter_mb": 85.0},
-        ],
-        "n_arms": 2,
-    }
-    block = report.render_experiments(experiments)
-    assert "QLoRA is" in block and "more accurate" in block
-
-
-def test_render_tolerates_missing_measurements(report):
-    """A partially-populated arm (e.g. VRAM not recorded) must render, not crash."""
-    experiments = {
-        "arms": [
-            {"name": "a", "quantization": "nf4", "tuned_execution_accuracy": 0.65,
-             "wall_clock_hours": None, "peak_vram_gb": None, "adapter_mb": None},
-            {"name": "b", "quantization": "none", "tuned_execution_accuracy": 0.66,
-             "wall_clock_hours": 3.0, "peak_vram_gb": 4.8, "adapter_mb": 85.0},
-        ],
-        "n_arms": 2,
-    }
-    block = report.render_experiments(experiments)
-    assert "—" in block  # the em-dash placeholder for missing values
+    assert "not recorded" in block
+    assert "None GB" not in block

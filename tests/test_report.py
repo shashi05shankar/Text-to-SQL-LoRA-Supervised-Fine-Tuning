@@ -304,6 +304,91 @@ def test_full_render_composes_both_blocks(report, metrics, analysis):
     assert "### What it got structurally right" in combined
 
 
+@pytest.fixture
+def experiments() -> dict:
+    """Two arms shaped like the real LoRA-vs-QLoRA comparison, with the observed
+    opposite-direction result: fp16 base higher, fp16 tuned lower."""
+    return {
+        "n_arms": 2,
+        "arms": [
+            {
+                "name": "nf4_published", "quantization": "nf4",
+                "base_execution_accuracy": 0.4101, "tuned_execution_accuracy": 0.6547,
+                "wall_clock_hours": 4.23, "peak_vram_gb": None, "adapter_mb": 85.3,
+            },
+            {
+                "name": "lora_fp16", "quantization": "none",
+                "base_execution_accuracy": 0.4778, "tuned_execution_accuracy": 0.6248,
+                "wall_clock_hours": 3.0, "peak_vram_gb": 8.134, "adapter_mb": 85.3,
+            },
+        ],
+        "cross_arm_significance": [
+            {"system": "base", "mcnemar": {"p_value": 1.72e-06, "significant_at_05": True},
+             "bootstrap": {"ci_low": 0.041, "ci_high": 0.095}},
+            {"system": "tuned", "mcnemar": {"p_value": 0.0167, "significant_at_05": True},
+             "bootstrap": {"ci_low": -0.053, "ci_high": -0.007}},
+        ],
+    }
+
+
+def test_experiments_shows_both_arms_and_both_precisions(report, experiments):
+    block = report.render_experiments(experiments)
+
+    assert "QLoRA" in block and "fp16 LoRA" in block
+    assert "4-bit NF4" in block
+    # Base and tuned columns both present -- the opposite-direction story needs both.
+    assert "0.4101" in block and "0.6547" in block  # QLoRA base, tuned
+    assert "0.4778" in block and "0.6248" in block  # fp16 base, tuned
+
+
+def test_experiments_reports_the_quantization_tax_on_the_base(report, experiments):
+    block = report.render_experiments(experiments)
+
+    assert "1.7e-06" in block
+    assert "47.8%" in block and "41.0%" in block
+
+
+def test_experiments_reports_the_counterintuitive_tuned_result(report, experiments):
+    """The headline of this ablation: QLoRA ends higher despite the weaker base."""
+    block = report.render_experiments(experiments)
+
+    assert "0.017" in block  # tuned p-value
+    assert "regulariz" in block.lower()  # the hypothesis, labelled as such
+    assert "hypothesis" in block.lower()
+
+
+def test_experiments_flags_the_vram_budget_breach(report, experiments):
+    """fp16 peaked over 8 GB -- the correction to the earlier 'free headroom' claim."""
+    block = report.render_experiments(experiments)
+
+    assert "8.13" in block
+    assert "over" in block.lower()
+    assert "8 GB" in block
+
+
+def test_experiments_missing_vram_renders_cleanly(report, experiments):
+    """The published arm has no recorded VRAM; it must not print 'None GB'."""
+    block = report.render_experiments(experiments)
+
+    assert "None GB" not in block
+    assert "not recorded" in block
+
+
+def test_experiments_needs_two_arms(report, experiments):
+    single = {"arms": experiments["arms"][:1], "n_arms": 1}
+    assert report.render_experiments(single) == ""
+    assert report.render_experiments({}) == ""
+
+
+def test_full_render_includes_experiments(report, metrics, analysis, experiments):
+    combined = (
+        report.render(metrics)
+        + report.render_analysis(analysis)
+        + report.render_experiments(experiments)
+    )
+    assert "### LoRA vs QLoRA" in combined
+
+
 def test_missing_metrics_is_a_failure_not_an_empty_report(report, tmp_path, monkeypatch):
     from text2sql_lora.config import Paths
 

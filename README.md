@@ -130,6 +130,25 @@ Execution accuracy is all-or-nothing: a query with the right joins, filter and g
 | Hardware | Tesla T4 (free tier) |
 | Wall clock | 4.2 h |
 | Throughput | 1.24 examples/s |
+
+---
+
+### LoRA vs QLoRA — the quantization I assumed was free was not
+
+The published run used **QLoRA** (4-bit NF4 base). QLoRA was not strictly *required* at 1.5B — fp16 LoRA fits a 16 GB T4 too — so I ran the identical recipe (same seed, data, db-disjoint split, rank, epochs, batch, LR) with **only** the base precision changed. I expected fp16 to win: more precision, and no per-step dequantization. It did not.
+
+| Arm | Base precision | Base EX | Tuned EX | Wall clock | Peak VRAM | Adapter |
+| --- | --- | --- | --- | --- | --- | --- |
+| **QLoRA** | 4-bit NF4 | 0.4101 | 0.6547 | 4.2 h | not recorded | 85 MB |
+| **fp16 LoRA** | fp16 | 0.4778 | 0.6248 | 3.0 h | 8.13 GB | 85 MB |
+
+Three findings, each from a paired test on the identical 1,034 questions:
+
+1. **Quantizing the base costs it real accuracy.** With the adapter off, the fp16 base scores 47.8% against the 4-bit base's 41.0% — a +6.8% gap (McNemar p=1.7e-06, bootstrap CI [+0.041, +0.095]). NF4 is lossy, and it shows.
+2. **Yet after fine-tuning, QLoRA ends up ahead** — 65.5% vs 62.5%, a +3.0% gap the other way (p=0.017, CI [-0.053, -0.007]). The 4-bit arm started 6.8% *below* fp16 and finished above it. The most likely explanation is regularization: quantization noise on the frozen base blunts the overfitting both arms show (train loss → ~0.015, val loss rising), and the cleaner fp16 base overfits harder. Stated as a hypothesis — it is consistent with the numbers, not proven by them.
+3. **fp16 was faster, but not free.** It trained in 3.0 h vs QLoRA's 4.2 h (1.41x faster — no per-step dequantization). But fp16 peaked at **8.13 GB** — **over** the 8 GB this project set as its portability budget, so it needs the T4's 16 GB and would *not* fit an 8 GB laptop card. QLoRA is what makes the ≤8 GB claim true.
+
+So the honest verdict flips the argument I started with. I expected fp16 LoRA to be the better default at this scale; measured, QLoRA was **more accurate**, fit a **smaller VRAM budget**, and cost only ~1.2 h more. The one thing fp16 clearly wins is wall clock. Wall-clock and VRAM are comparable because both arms ran on the same T4 at the same batch and sequence length.
 <!-- END RESULTS -->
 
 ---
@@ -361,15 +380,16 @@ Base weights stay frozen and 4-bit quantized (QLoRA). For each targeted projecti
 `W (d×k)`, LoRA learns `A (r×k)` and `B (d×r)`, and the forward pass becomes
 `W·x + (α/r)·B·A·x`. Only `A` and `B` receive gradients.
 
-**Why QLoRA and not plain LoRA?** Honestly, at 1.5B it was a headroom choice, not a
-requirement — fp16 LoRA fits a 16 GB T4 too (~4.8 GB vs ~2.6 GB). QLoRA earns its place
-for two reasons: the ≤8 GB budget (it must fit a friend's 8 GB laptop GPU), and
-scale-invariance — the same recipe runs 7B unchanged, where fp16 weights alone (~15 GB)
-would not fit. `notebooks/kaggle_lora_vs_qlora.ipynb` measures the trade directly
-(accuracy, wall clock, peak VRAM) rather than leaving it as an argument; run its
-`lora_fp16` arm and `scripts/report.py` folds a comparison table in here. At inference the
-quantization is dropped entirely: bitsandbytes 4-bit is CUDA-only, so the CPU server loads
-the same adapter on a bf16 base (see the CPU-latency note above).
+**Why QLoRA and not plain LoRA?** I initially thought this was a free headroom choice —
+that fp16 LoRA would train just as well and probably faster. So I ran it as a controlled
+ablation, and it changed my mind. The **LoRA vs QLoRA** section in the results has the
+paired numbers, but the short version: fp16 trained faster (3.0 h vs 4.2 h) yet finished
+**less accurate** (62.5% vs 65.5%, p=0.017) and peaked at **8.13 GB — over the 8 GB
+budget**, so it would not fit an 8 GB laptop GPU at all. QLoRA earns its place on the
+measurement, not the argument. It also scale-invariant: the same recipe runs 7B unchanged,
+where fp16 weights alone (~15 GB) would not fit. At inference the quantization is dropped
+entirely — bitsandbytes 4-bit is CUDA-only, so the CPU server loads the same adapter on a
+bf16 base (see the CPU-latency note above).
 
 | | |
 | --- | --- |
@@ -378,7 +398,7 @@ the same adapter on a bf16 base (see the CPU-latency note above).
 | Quantization | 4-bit NF4, double quant, fp16 compute |
 | Sequence length | 1024 (measured: truncates 2.6% of training examples) |
 | Batch | 2 per device × 8 accumulation = 16 effective |
-| VRAM budget | **≤ 8 GB** — ran on one Kaggle T4 with headroom |
+| VRAM budget | **≤ 8 GB** with QLoRA (measured; the fp16 variant needs >8 GB) |
 | Actual run | 1,170 steps, 3 epochs, **4.2 h** on a single T4 |
 
 Training is plain SFT on (prompt → target) pairs with **loss on the completion only**:

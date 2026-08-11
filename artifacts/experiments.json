@@ -16,7 +16,96 @@
       "peak_vram_gb": null,
       "adapter_mb": 85.342487,
       "gpu": "Tesla T4"
+    },
+    {
+      "name": "lora_fp16",
+      "quantization": "none",
+      "base_model": "Qwen/Qwen2.5-1.5B-Instruct",
+      "seed": 42,
+      "epochs": 3.0,
+      "lora_rank": 16,
+      "base_execution_accuracy": 0.47775628626692457,
+      "tuned_execution_accuracy": 0.6247582205029013,
+      "absolute_gain": 0.14700193423597674,
+      "tuned_invalid_sql_rate": 0.16634429400386846,
+      "wall_clock_seconds": 10807.792116968,
+      "wall_clock_hours": 3.0021644769355555,
+      "peak_vram_gb": 8.134112768,
+      "adapter_mb": 85.342487,
+      "gpu": "Tesla T4"
     }
   ],
-  "n_arms": 1
+  "n_arms": 2,
+  "cross_arm_significance": [
+    {
+      "baseline": "nf4_published",
+      "candidate": "lora_fp16",
+      "baseline_accuracy": 0.41005802707930367,
+      "candidate_accuracy": 0.47775628626692457,
+      "baseline_ci": [
+        0.38046575800045623,
+        0.4403161172858201
+      ],
+      "candidate_ci": [
+        0.4474490883334968,
+        0.5082281496405285
+      ],
+      "delta": 0.0676982591876209,
+      "mcnemar": {
+        "gained": 139,
+        "lost": 69,
+        "net": 70,
+        "agree_correct": 355,
+        "agree_wrong": 471,
+        "discordant": 208,
+        "chi2": 22.889423076923077,
+        "p_value": 1.7159348086707082e-06,
+        "method": "chi-square (continuity-corrected)",
+        "significant_at_05": true
+      },
+      "bootstrap": {
+        "delta": 0.06769825918762089,
+        "ci_low": 0.04061895551257253,
+        "ci_high": 0.09477756286266925,
+        "n_resamples": 10000,
+        "excludes_zero": true
+      },
+      "system": "base"
+    },
+    {
+      "baseline": "nf4_published",
+      "candidate": "lora_fp16",
+      "baseline_accuracy": 0.6547388781431335,
+      "candidate_accuracy": 0.6247582205029013,
+      "baseline_ci": [
+        0.6252343188017173,
+        0.6830979387702802
+      ],
+      "candidate_ci": [
+        0.5948354387589797,
+        0.6537574439084434
+      ],
+      "delta": -0.029980657640232167,
+      "mcnemar": {
+        "gained": 63,
+        "lost": 94,
+        "net": -31,
+        "agree_correct": 583,
+        "agree_wrong": 294,
+        "discordant": 157,
+        "chi2": 5.732484076433121,
+        "p_value": 0.01665390895003423,
+        "method": "chi-square (continuity-corrected)",
+        "significant_at_05": true
+      },
+      "bootstrap": {
+        "delta": -0.029980657640232108,
+        "ci_low": -0.05319148936170213,
+        "ci_high": -0.006769825918762089,
+        "n_resamples": 10000,
+        "excludes_zero": true
+      },
+      "system": "tuned"
+    }
+  ]
 }
