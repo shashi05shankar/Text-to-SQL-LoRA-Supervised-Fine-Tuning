@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "text2sql-lora"
 version = "0.1.0"
-description = "LoRA supervised fine-tuning of Qwen2.5-1.5B-Instruct for text-to-SQL, measured by execution accuracy on Spider's held-out cross-domain dev set."
+description = "Financial question answering by LoRA / QLoRA fine-tuning of Qwen2.5-1.5B-Instruct on 10-K filings, measured by ROUGE and benchmarked LoRA vs QLoRA. Also contains the earlier text-to-SQL (Spider) experiment."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -72,7 +72,7 @@ select = ["E", "F", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
 ignore = ["B008"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["text2sql_lora"]
+known-first-party = ["text2sql_lora", "finqa_lora"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
